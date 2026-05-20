@@ -3,7 +3,6 @@ package graph
 import (
 	"container/heap"
 	"errors"
-	"math"
 )
 
 func AStar(g *Graph, startID int64, endID int64) ([]int64, float64, error) {
@@ -12,9 +11,6 @@ func AStar(g *Graph, startID int64, endID int64) ([]int64, float64, error) {
 		return nil, 0, errors.New("end node not found")
 	}
 	distances := make(map[int64]float64)
-	for id := range g.Nodes {
-		distances[id] = math.Inf(1)
-	}
 	distances[startID] = 0
 	previous := make(map[int64]int64)
 	visited := make(map[int64]bool)
@@ -29,10 +25,6 @@ func AStar(g *Graph, startID int64, endID int64) ([]int64, float64, error) {
 		if current.nodeID == endID {
 			return reconstructPath(previous, startID, endID, distances[endID])
 		}
-		currentNode, ok := g.Nodes[current.nodeID]
-		if !ok {
-			continue
-		}
 		for _, edge := range g.Edges[current.nodeID] {
 			if visited[edge.To] {
 				continue
@@ -42,11 +34,12 @@ func AStar(g *Graph, startID int64, endID int64) ([]int64, float64, error) {
 				continue
 			}
 			newDist := distances[current.nodeID] + edge.Distance
-			if newDist < distances[edge.To] {
+			existing, ok := distances[edge.To]
+			if !ok || newDist < existing {
 				distances[edge.To] = newDist
 				previous[edge.To] = current.nodeID
 				//Heuristic calculation.
-				h := haversine(currentNode.Lat, currentNode.Lon, end.Lat, end.Lon)
+				h := haversine(neighbor.Lat, neighbor.Lon, end.Lat, end.Lon)
 				heap.Push(pq, &Item{nodeID: neighbor.ID, distance: newDist + h})
 			}
 		}

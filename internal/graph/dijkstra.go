@@ -3,7 +3,6 @@ package graph
 import (
 	"container/heap"
 	"errors"
-	"math"
 )
 
 // Item represents a node in the priority queue.
@@ -47,9 +46,6 @@ func (pq *PriorityQueue) Pop() interface{} {
 func Dijkstra(g *Graph, startID int64, endID int64) ([]int64, float64, error) {
 	//Tracks the shortest known distance to every node.
 	distances := make(map[int64]float64)
-	for id := range g.Nodes {
-		distances[id] = math.Inf(1)
-	}
 	distances[startID] = 0
 	//Tracks how we got to each node so reconstructPath can use it later.
 	previous := make(map[int64]int64)
@@ -76,7 +72,8 @@ func Dijkstra(g *Graph, startID int64, endID int64) ([]int64, float64, error) {
 				continue
 			}
 			newDist := distances[current.nodeID] + edge.Distance
-			if newDist < distances[edge.To] {
+			existing, ok := distances[edge.To]
+			if !ok || newDist < existing {
 				distances[edge.To] = newDist
 				previous[edge.To] = current.nodeID
 				heap.Push(pq, &Item{nodeID: edge.To, distance: newDist})

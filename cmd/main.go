@@ -21,6 +21,27 @@ func main() {
 		log.Fatal("Failed to parse OSM file:", err)
 	}
 	fmt.Printf("Graph loaded. %d nodes, %d edges\n", len(g.Nodes), len(g.Edges))
+	fmt.Println("Preprocessing graph for Contraction Hierarchies...")
+	done := make(chan bool)
+	go func() {
+		chars := []string{"[          ]", "[=         ]", "[==        ]", "[===       ]", "[====      ]", "[=====     ]", "[======    ]", "[=======   ]", "[========  ]", "[========= ]", "[==========]"}
+		i := 0
+		for {
+			select {
+			case <-done:
+				fmt.Print("\r                    \r")
+				return
+			default:
+				fmt.Printf("\r%s", chars[i%len(chars)])
+				i++
+				time.Sleep(500 * time.Millisecond)
+			}
+		}
+	}()
+	ch := graph.Preprocess(g)
+	done <- true
+	time.Sleep(100 * time.Millisecond)
+	fmt.Println("Preprocessing complete.")
 	//Grab any two node IDs from the graph to test with.
 	var startID, endID int64
 	j := 0
@@ -38,6 +59,24 @@ func main() {
 				break
 			}
 		}
+		fmt.Printf("Starting Dijkstra:\n")
+		fmt.Printf("Finding path from %d to %d...\n", startID, endID)
+		start_Dijkstra := time.Now()
+		path_Dijkstra, distance_Dijkstra, err := graph.Dijkstra(g, startID, endID)
+		elapsed_Dijkstra := time.Since(start_Dijkstra)
+		if err != nil {
+			log.Fatal("Dijkstra failed:", err)
+		}
+		fmt.Printf("Path found. %d nodes, %.2f miles in %v\n", len(path_Dijkstra), distance_Dijkstra, elapsed_Dijkstra)
+		fmt.Printf("Starting Bidirectional Dijkstra:\n")
+		fmt.Printf("Finding path from %d to %d...\n", startID, endID)
+		start_BidirectionalDijkstra := time.Now()
+		path_BidirectionalDijkstra, distance_BidirectionalDijkstra, err := graph.BidirectionalDijkstra(g, startID, endID)
+		elapsed_BidirectionalDijkstra := time.Since(start_BidirectionalDijkstra)
+		if err != nil {
+			log.Fatal("Bidirectional Dijkstra failed:", err)
+		}
+		fmt.Printf("Path found. %d nodes, %.2f miles in %v\n", len(path_BidirectionalDijkstra), distance_BidirectionalDijkstra, elapsed_BidirectionalDijkstra)
 		fmt.Printf("Starting A*:\n")
 		fmt.Printf("Finding path from %d to %d...\n", startID, endID)
 		start_A := time.Now()
@@ -56,6 +95,16 @@ func main() {
 			log.Fatal("New Bidirectional A* failed:", err)
 		}
 		fmt.Printf("Path found. %d nodes, %.2f miles in %v\n", len(path_New_Bidirectional_A), distance_New_Bidirectional_A, elapsed_New_Bidirectional_A)
-		j = j + 1
+		fmt.Printf("Starting Contraction Hierarchies:\n")
+		fmt.Printf("Finding path from %d to %d...\n", startID, endID)
+		start_ch := time.Now()
+		path_ch, distance_ch, err := graph.CHQuery(ch, startID, endID)
+		elapsed_ch := time.Since(start_ch)
+		if err != nil {
+			log.Fatal("Contraction Hierarchies failed:", err)
+		}
+		fmt.Printf("Path found. %d nodes, %.2f miles in %v\n", len(path_ch), distance_ch, elapsed_ch)
+		fmt.Printf("-------------------------------------\n")
+		j++
 	}
 }

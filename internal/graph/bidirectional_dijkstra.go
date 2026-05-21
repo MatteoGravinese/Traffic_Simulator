@@ -7,6 +7,10 @@ import (
 )
 
 func BidirectionalDijkstra(g *Graph, startID int64, endID int64) ([]int64, float64, error) {
+	//If start and end are the same, return early.
+	if startID == endID {
+		return []int64{startID}, 0, nil
+	}
 	//Forward search data.
 	forwardDist := make(map[int64]float64)
 	forwardPrev := make(map[int64]int64)
@@ -35,14 +39,6 @@ func BidirectionalDijkstra(g *Graph, startID int64, endID int64) ([]int64, float
 		forwardCurrent := heap.Pop(forwardPQ).(*Item)
 		if !forwardVisited[forwardCurrent.nodeID] {
 			forwardVisited[forwardCurrent.nodeID] = true
-			//Check if backward search has visited this node.
-			if backwardVisited[forwardCurrent.nodeID] {
-				combined := forwardDist[forwardCurrent.nodeID] + backwardDist[forwardCurrent.nodeID]
-				if combined < bestDist {
-					bestDist = combined
-					meetingNode = forwardCurrent.nodeID
-				}
-			}
 			for _, edge := range g.Edges[forwardCurrent.nodeID] {
 				if forwardVisited[edge.To] {
 					continue
@@ -53,6 +49,14 @@ func BidirectionalDijkstra(g *Graph, startID int64, endID int64) ([]int64, float
 					forwardDist[edge.To] = newDist
 					forwardPrev[edge.To] = forwardCurrent.nodeID
 					heap.Push(forwardPQ, &Item{nodeID: edge.To, distance: newDist})
+					//Check for path intersection during relaxation.
+					if backDist, ok := backwardDist[edge.To]; ok {
+						combined := newDist + backDist
+						if combined < bestDist {
+							bestDist = combined
+							meetingNode = edge.To
+						}
+					}
 				}
 			}
 		}
@@ -60,14 +64,7 @@ func BidirectionalDijkstra(g *Graph, startID int64, endID int64) ([]int64, float
 		backwardCurrent := heap.Pop(backwardPQ).(*Item)
 		if !backwardVisited[backwardCurrent.nodeID] {
 			backwardVisited[backwardCurrent.nodeID] = true
-			//Check if forward search has visited this node.
-			if forwardVisited[backwardCurrent.nodeID] {
-				combined := forwardDist[backwardCurrent.nodeID] + backwardDist[backwardCurrent.nodeID]
-				if combined < bestDist {
-					bestDist = combined
-					meetingNode = backwardCurrent.nodeID
-				}
-			}
+			//Note: If directed graph, you must traverse incoming edges instead of outgoing.
 			for _, edge := range g.Edges[backwardCurrent.nodeID] {
 				if backwardVisited[edge.To] {
 					continue
@@ -78,6 +75,14 @@ func BidirectionalDijkstra(g *Graph, startID int64, endID int64) ([]int64, float
 					backwardDist[edge.To] = newDist
 					backwardPrev[edge.To] = backwardCurrent.nodeID
 					heap.Push(backwardPQ, &Item{nodeID: edge.To, distance: newDist})
+					//Check path intersection during relaxation.
+					if fDist, ok := forwardDist[edge.To]; ok {
+						combined := newDist + fDist
+						if combined < bestDist {
+							bestDist = combined
+							meetingNode = edge.To
+						}
+					}
 				}
 			}
 		}
@@ -85,21 +90,27 @@ func BidirectionalDijkstra(g *Graph, startID int64, endID int64) ([]int64, float
 	if meetingNode == -1 {
 		return nil, 0, errors.New("no path found")
 	}
-	//Reconstruct path from both directions.
-	path := []int64{}
-	//Forward path: start to meeting node.
-	current := meetingNode
-	for current != startID {
-		path = append([]int64{current}, path...)
-		current = forwardPrev[current]
+	//Reconstruct the path from both directions.
+	var forwardPath []int64
+	curr := meetingNode
+	for {
+		forwardPath = append(forwardPath, curr)
+		if curr == startID {
+			break
+		}
+		curr = forwardPrev[curr]
 	}
-	path = append([]int64{startID}, path...)
-	//Backward path: meeting node to end.
-	current = backwardPrev[meetingNode]
-	for current != endID {
-		path = append(path, current)
-		current = backwardPrev[current]
+	//Reverse forwardPath to get startID -> ... -> meetingNode.
+	for i, j := 0, len(forwardPath)-1; i < j; i, j = i+1, j-1 {
+		forwardPath[i], forwardPath[j] = forwardPath[j], forwardPath[i]
 	}
-	path = append(path, endID)
+	//Backward path: meeting node to end (excluding meetingNode itself).
+	var backwardPath []int64
+	curr = meetingNode
+	for curr != endID {
+		curr = backwardPrev[curr]
+		backwardPath = append(backwardPath, curr)
+	}
+	path := append(forwardPath, backwardPath...)
 	return path, bestDist, nil
 }

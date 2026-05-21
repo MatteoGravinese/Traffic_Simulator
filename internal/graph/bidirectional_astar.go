@@ -37,8 +37,6 @@ func NewBidirectionalAStar(g *Graph, startID int64, endID int64) ([]int64, float
 	fForward := hStart
 	fBackward := hStart
 	meetingNode := int64(-1)
-	forwardVisits := 0
-	backwardVisits := 0
 	for forwardPQ.Len() > 0 && backwardPQ.Len() > 0 {
 		//Early termination: if the minimum possible path cost from either frontier
 		//meets or exceeds the best path found so far, we can stop immediately.
@@ -61,7 +59,6 @@ func NewBidirectionalAStar(g *Graph, startID int64, endID int64) ([]int64, float
 				forwardDist[forwardCurrent.nodeID]+fBackward-haversine(forwardNode.Lat, forwardNode.Lon, start.Lat, start.Lon) >= bestDist
 			if !forwardRejected {
 				forwardVisited[forwardCurrent.nodeID] = true
-				forwardVisits = forwardVisits + 1
 				for _, edge := range g.Edges[forwardCurrent.nodeID] {
 					if forwardVisited[edge.To] {
 						continue
@@ -105,7 +102,6 @@ func NewBidirectionalAStar(g *Graph, startID int64, endID int64) ([]int64, float
 				backwardDist[backwardCurrent.nodeID]+fForward-haversine(backwardNode.Lat, backwardNode.Lon, end.Lat, end.Lon) >= bestDist
 			if !backwardRejected {
 				backwardVisited[backwardCurrent.nodeID] = true
-				backwardVisits = backwardVisits + 1
 				for _, edge := range g.Edges[backwardCurrent.nodeID] {
 					if backwardVisited[edge.To] {
 						continue
@@ -166,6 +162,5 @@ func NewBidirectionalAStar(g *Graph, startID int64, endID int64) ([]int64, float
 		backwardPath = append(backwardPath, curr)
 	}
 	path := append(forwardPath, backwardPath...)
-	fmt.Printf("Bidirectional forward visits: %d, Bidirectional backward visits: %d\n", forwardVisits, backwardVisits)
 	return path, bestDist, nil
 }

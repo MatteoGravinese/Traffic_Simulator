@@ -23,44 +23,39 @@ func main() {
 	fmt.Printf("Graph loaded. %d nodes, %d edges\n", len(g.Nodes), len(g.Edges))
 	//Grab any two node IDs from the graph to test with.
 	var startID, endID int64
-	i := 0
-	for id := range g.Nodes {
-		if i == 0 {
-			startID = id
+	j := 0
+	for j < 10 {
+		i := 0
+		for id := range g.Nodes {
+			if i == 0 {
+				startID = id
+			}
+			if i == 100 {
+				endID = id
+			}
+			i++
+			if i > 100 {
+				break
+			}
 		}
-		if i == 100 {
-			endID = id
+		fmt.Printf("Starting A*:\n")
+		fmt.Printf("Finding path from %d to %d...\n", startID, endID)
+		start_A := time.Now()
+		path_A, distance_A, err := graph.AStar(g, startID, endID)
+		elapsed_A := time.Since(start_A)
+		if err != nil {
+			log.Fatal("A* failed:", err)
 		}
-		i++
-		if i > 100 {
-			break
+		fmt.Printf("Path found. %d nodes, %.2f miles in %v\n", len(path_A), distance_A, elapsed_A)
+		fmt.Printf("Starting New Bidirectional A*:\n")
+		fmt.Printf("Finding path from %d to %d...\n", startID, endID)
+		start_New_Bidirectional_A := time.Now()
+		path_New_Bidirectional_A, distance_New_Bidirectional_A, err := graph.NewBidirectionalAStar(g, startID, endID)
+		elapsed_New_Bidirectional_A := time.Since(start_New_Bidirectional_A)
+		if err != nil {
+			log.Fatal("New Bidirectional A* failed:", err)
 		}
+		fmt.Printf("Path found. %d nodes, %.2f miles in %v\n", len(path_New_Bidirectional_A), distance_New_Bidirectional_A, elapsed_New_Bidirectional_A)
+		j = j + 1
 	}
-	fmt.Printf("Starting Dijkstra:\n")
-	fmt.Printf("Finding path from %d to %d...\n", startID, endID)
-	start_Dijkstra := time.Now()
-	path_Dijkstra, distance_Dijkstra, err := graph.Dijkstra(g, startID, endID)
-	elapsed_Dijkstra := time.Since(start_Dijkstra)
-	if err != nil {
-		log.Fatal("Dijkstra failed:", err)
-	}
-	fmt.Printf("Path found. %d nodes, %.2f miles in %v\n", len(path_Dijkstra), distance_Dijkstra, elapsed_Dijkstra)
-	fmt.Printf("Starting Bidirectional Dijkstra:\n")
-	fmt.Printf("Finding path from %d to %d...\n", startID, endID)
-	start_BidirectionalDijkstra := time.Now()
-	path_BidirectionalDijkstra, distance_BidirectionalDijkstra, err := graph.BidirectionalDijkstra(g, startID, endID)
-	elapsed_BidirectionalDijkstra := time.Since(start_BidirectionalDijkstra)
-	if err != nil {
-		log.Fatal("Bidirectional Dijkstra failed:", err)
-	}
-	fmt.Printf("Path found. %d nodes, %.2f miles in %v\n", len(path_BidirectionalDijkstra), distance_BidirectionalDijkstra, elapsed_BidirectionalDijkstra)
-	fmt.Printf("Starting A*:\n")
-	fmt.Printf("Finding path from %d to %d...\n", startID, endID)
-	start_A := time.Now()
-	path_A, distance_A, err2 := graph.AStar(g, startID, endID)
-	elapsed_A := time.Since(start_A)
-	if err2 != nil {
-		log.Fatal("A* failed:", err2)
-	}
-	fmt.Printf("Path found. %d nodes, %.2f miles in %v\n", len(path_A), distance_A, elapsed_A)
 }

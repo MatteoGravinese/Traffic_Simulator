@@ -12,6 +12,7 @@ type Edge struct {
 	To       int64
 	Distance float64
 	Speed    float64
+	Lanes    int
 }
 
 //Graph holds all nodes and edges in memory.

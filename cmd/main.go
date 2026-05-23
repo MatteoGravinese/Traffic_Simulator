@@ -8,6 +8,7 @@ import (
 
 	"github.com/MatteoGravinese/Traffic_Simulator/internal/api"
 	"github.com/MatteoGravinese/Traffic_Simulator/internal/graph"
+	"github.com/MatteoGravinese/Traffic_Simulator/internal/simulation"
 )
 
 func main() {
@@ -15,7 +16,6 @@ func main() {
 	db := api.ConnectPostgres()
 	defer db.Close()
 	rdb := api.ConnectRedis()
-	_ = rdb
 	fmt.Println("Loading road network...")
 	g, err := graph.ParseOSM("data/pittsburgh.osm")
 	if err != nil {
@@ -151,4 +151,8 @@ func main() {
 		fmt.Printf("-------------------------------------\n")
 		j++
 	}
+	state := simulation.NewSimState(g, ch, cch, rdb)
+	fmt.Println("Starting web server on http://localhost:8080...")
+	go api.StartServer(g, state)
+	select {}
 }

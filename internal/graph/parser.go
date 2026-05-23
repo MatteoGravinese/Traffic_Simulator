@@ -89,6 +89,8 @@ func ParseOSM(filename string) (*Graph, error) {
 		highway := ""
 		speed := 0.0
 		speedSet := false
+		oneway := false
+		onewayReverse := false
 		for _, tag := range way.Tags {
 			if tag.Key == "highway" {
 				highway = tag.Value
@@ -107,6 +109,16 @@ func ParseOSM(filename string) (*Graph, error) {
 			if tag.Key == "lanes" {
 				fmt.Sscanf(tag.Value, "%d", &lanes)
 			}
+			if tag.Key == "oneway" {
+				if tag.Value == "yes" || tag.Value == "1" || tag.Value == "true" {
+					oneway = true
+				} else if tag.Value == "-1" {
+					onewayReverse = true
+				}
+			}
+		}
+		if highway == "motorway" {
+			oneway = true
 		}
 		if !speedSet {
 			speed = highwayDefaultSpeed(highway)
@@ -121,8 +133,12 @@ func ParseOSM(filename string) (*Graph, error) {
 			}
 			dist := haversine(from.Lat, from.Lon, to.Lat, to.Lon)
 			time := dist / speed
-			g.AddEdge(fromID, Edge{To: toID, Distance: dist, Speed: speed, Lanes: lanes, Time: time})
-			g.AddEdge(toID, Edge{To: fromID, Distance: dist, Speed: speed, Lanes: lanes, Time: time})
+			if !onewayReverse {
+				g.AddEdge(fromID, Edge{To: toID, Distance: dist, Speed: speed, Lanes: lanes, Time: time})
+			}
+			if !oneway {
+				g.AddEdge(toID, Edge{To: fromID, Distance: dist, Speed: speed, Lanes: lanes, Time: time})
+			}
 		}
 	}
 	var maxSpeed float64

@@ -153,7 +153,7 @@ func updateCongestion(state *SimState, vehicles []*Vehicle) {
 		}
 		total_cars[curr_node][next_node]++
 	}
-	for node_from, _ := range total_cars {
+	for node_from := range total_cars {
 		for node_to, cars := range total_cars[node_from] {
 			var street_length float64
 			var lane_number float64

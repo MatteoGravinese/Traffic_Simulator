@@ -30,13 +30,15 @@ type Vehicle struct {
 
 // SimState holds all shared simulation state.
 type SimState struct {
-	G          *graph.Graph
-	CH         *graph.CHGraph
-	Vehicles   []*Vehicle
-	Congestion map[int64]map[int64]float64 //edge congestion: from -> to -> count.
-	mu         sync.Mutex
-	RDB        *redis.Client
-	NodeIDs    []int64 //cached list of all node IDs for random selection.
+	G            *graph.Graph
+	CH           *graph.CHGraph
+	CCH          *graph.CCHGraph
+	Vehicles     []*Vehicle
+	Congestion   map[int64]map[int64]float64 //edge congestion: from -> to -> count.
+	mu           sync.Mutex
+	RDB          *redis.Client
+	NodeIDs      []int64 //cached list of all node IDs for random selection.
+	TrafficAware bool
 }
 
 // NewSimState creates a new simulation state.

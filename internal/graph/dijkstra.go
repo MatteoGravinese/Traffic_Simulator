@@ -7,9 +7,9 @@ import (
 
 // Item represents a node in the priority queue.
 type Item struct {
-	nodeID   int64
-	distance float64
-	index    int
+	nodeID int64
+	time   float64
+	index  int
 }
 
 // PriorityQueue implements heap.Interface.
@@ -20,7 +20,7 @@ func (pq PriorityQueue) Len() int {
 }
 
 func (pq PriorityQueue) Less(i, j int) bool {
-	return pq[i].distance < pq[j].distance
+	return pq[i].time < pq[j].time
 }
 
 func (pq PriorityQueue) Swap(i, j int) {
@@ -44,18 +44,18 @@ func (pq *PriorityQueue) Pop() interface{} {
 
 // Dijkstra finds the shortest path between two nodes.
 func Dijkstra(g *Graph, startID int64, endID int64) ([]int64, float64, error) {
-	//Tracks the shortest known distance to every node.
-	distances := make(map[int64]float64)
-	distances[startID] = 0
+	//Tracks the shortest known time to every node.
+	times := make(map[int64]float64)
+	times[startID] = 0
 	//Tracks how we got to each node so reconstructPath can use it later.
 	previous := make(map[int64]int64)
 	//Tracks visited nodes.
 	visited := make(map[int64]bool)
 	//Initializes the priority queue with the start node.
-	pq := &PriorityQueue{{nodeID: startID, distance: 0}}
+	pq := &PriorityQueue{{nodeID: startID, time: 0}}
 	heap.Init(pq)
 	for pq.Len() > 0 {
-		//Pops the node with the smallest distance.
+		//Pops the node with the smallest time.
 		current := heap.Pop(pq).(*Item)
 		//Skips the node if has already been visited.
 		if visited[current.nodeID] {
@@ -64,19 +64,19 @@ func Dijkstra(g *Graph, startID int64, endID int64) ([]int64, float64, error) {
 		visited[current.nodeID] = true
 		//Checks if we reached the destination.
 		if current.nodeID == endID {
-			return reconstructPath(previous, startID, endID, distances[endID])
+			return reconstructPath(previous, startID, endID, times[endID])
 		}
 		//Otherwise, find the nearest unexplored neighbor.
 		for _, edge := range g.Edges[current.nodeID] {
 			if visited[edge.To] {
 				continue
 			}
-			newDist := distances[current.nodeID] + edge.Distance
-			existing, ok := distances[edge.To]
+			newDist := times[current.nodeID] + edge.Time
+			existing, ok := times[edge.To]
 			if !ok || newDist < existing {
-				distances[edge.To] = newDist
+				times[edge.To] = newDist
 				previous[edge.To] = current.nodeID
-				heap.Push(pq, &Item{nodeID: edge.To, distance: newDist})
+				heap.Push(pq, &Item{nodeID: edge.To, time: newDist})
 			}
 		}
 	}

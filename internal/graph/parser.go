@@ -36,6 +36,15 @@ type OSMData struct {
 
 // ParseOSM reads an .osm file and builds a graph from it.
 func ParseOSM(filename string) (*Graph, error) {
+	routableHighways := map[string]bool{
+		"motorway": true, "motorway_link": true,
+		"trunk": true, "trunk_link": true,
+		"primary": true, "primary_link": true,
+		"secondary": true, "secondary_link": true,
+		"tertiary": true, "tertiary_link": true,
+		"residential": true, "living_street": true,
+		"unclassified": true, "service": true,
+	}
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -47,8 +56,27 @@ func ParseOSM(filename string) (*Graph, error) {
 		return nil, err
 	}
 	g := NewGraph()
-	//Add all nodes to the graph.
+	//First pass: collect node IDs referenced by routable ways.
+	referencedNodes := make(map[int64]bool)
+	for _, way := range osmData.Ways {
+		highway := ""
+		for _, tag := range way.Tags {
+			if tag.Key == "highway" {
+				highway = tag.Value
+			}
+		}
+		if !routableHighways[highway] {
+			continue
+		}
+		for _, n := range way.Nodes {
+			referencedNodes[n.Ref] = true
+		}
+	}
+	//Add only routable nodes to the graph.
 	for _, n := range osmData.Nodes {
+		if !referencedNodes[n.ID] {
+			continue
+		}
 		g.AddNode(Node{
 			ID:  n.ID,
 			Lat: n.Lat,
@@ -57,10 +85,14 @@ func ParseOSM(filename string) (*Graph, error) {
 	}
 	//Add all edges from ways.
 	for _, way := range osmData.Ways {
-		//Default values.
 		lanes := 2
-		speed := 30.0
+		highway := ""
+		speed := 0.0
+		speedSet := false
 		for _, tag := range way.Tags {
+			if tag.Key == "highway" {
+				highway = tag.Value
+			}
 			if tag.Key == "maxspeed" {
 				if strings.Contains(tag.Value, "mph") {
 					fmt.Sscanf(tag.Value, "%f mph", &speed)
@@ -70,7 +102,14 @@ func ParseOSM(filename string) (*Graph, error) {
 					fmt.Sscanf(tag.Value, "%f", &kmh)
 					speed = kmh * 0.621371
 				}
+				speedSet = true
 			}
+			if tag.Key == "lanes" {
+				fmt.Sscanf(tag.Value, "%d", &lanes)
+			}
+		}
+		if !speedSet {
+			speed = highwayDefaultSpeed(highway)
 		}
 		for i := 0; i < len(way.Nodes)-1; i++ {
 			fromID := way.Nodes[i].Ref
@@ -81,14 +120,60 @@ func ParseOSM(filename string) (*Graph, error) {
 				continue
 			}
 			dist := haversine(from.Lat, from.Lon, to.Lat, to.Lon)
-			g.AddEdge(fromID, Edge{To: toID, Distance: dist, Speed: speed, Lanes: lanes})
-			g.AddEdge(toID, Edge{To: fromID, Distance: dist, Speed: speed, Lanes: lanes})
+			time := dist / speed
+			g.AddEdge(fromID, Edge{To: toID, Distance: dist, Speed: speed, Lanes: lanes, Time: time})
+			g.AddEdge(toID, Edge{To: fromID, Distance: dist, Speed: speed, Lanes: lanes, Time: time})
 		}
 	}
+	var maxSpeed float64
+	for _, edges := range g.Edges {
+		for _, edge := range edges {
+			if edge.Speed > maxSpeed {
+				maxSpeed = edge.Speed
+			}
+		}
+	}
+	g.MaxSpeed = maxSpeed
 	return g, nil
 }
 
-// haversine calculates the distance in km between two lat/lon points.
+// Default speed based off of road type.
+func highwayDefaultSpeed(highway string) float64 {
+	switch highway {
+	case "motorway":
+		return 65.0
+	case "motorway_link":
+		return 45.0
+	case "trunk":
+		return 55.0
+	case "trunk_link":
+		return 45.0
+	case "primary":
+		return 45.0
+	case "primary_link":
+		return 35.0
+	case "secondary":
+		return 35.0
+	case "secondary_link":
+		return 25.0
+	case "tertiary":
+		return 25.0
+	case "tertiary_link":
+		return 25.0
+	case "residential":
+		return 25.0
+	case "living_street":
+		return 15.0
+	case "unclassified":
+		return 25.0
+	case "service":
+		return 15.0
+	default:
+		return 25.0
+	}
+}
+
+// haversine calculates the distance in miles between two lat/lon points.
 func haversine(lat1, lon1, lat2, lon2 float64) float64 {
 	const R = 3958.8
 	dLat := (lat2 - lat1) * math.Pi / 180
@@ -97,4 +182,8 @@ func haversine(lat1, lon1, lat2, lon2 float64) float64 {
 		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*
 			math.Sin(dLon/2)*math.Sin(dLon/2)
 	return R * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+}
+
+func heuristic(lat1, lon1, lat2, lon2, maxSpeed float64) float64 {
+	return haversine(lat1, lon1, lat2, lon2) / maxSpeed
 }

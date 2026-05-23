@@ -13,12 +13,14 @@ type Edge struct {
 	Distance float64
 	Speed    float64
 	Lanes    int
+	Time     float64
 }
 
 //Graph holds all nodes and edges in memory.
 type Graph struct {
-	Nodes map[int64]Node
-	Edges map[int64][]Edge
+	Nodes    map[int64]Node
+	Edges    map[int64][]Edge
+	MaxSpeed float64
 }
 
 //NewGraph creates an empty graph.

@@ -12,27 +12,27 @@ func BidirectionalDijkstra(g *Graph, startID int64, endID int64) ([]int64, float
 		return []int64{startID}, 0, nil
 	}
 	//Forward search data.
-	forwardDist := make(map[int64]float64)
+	forwardTime := make(map[int64]float64)
 	forwardPrev := make(map[int64]int64)
 	forwardVisited := make(map[int64]bool)
 	//Backward search data.
-	backwardDist := make(map[int64]float64)
+	backwardTime := make(map[int64]float64)
 	backwardPrev := make(map[int64]int64)
 	backwardVisited := make(map[int64]bool)
-	forwardDist[startID] = 0
-	backwardDist[endID] = 0
+	forwardTime[startID] = 0
+	backwardTime[endID] = 0
 	//Initialize priority queues.
-	forwardPQ := &PriorityQueue{{nodeID: startID, distance: 0}}
-	backwardPQ := &PriorityQueue{{nodeID: endID, distance: 0}}
+	forwardPQ := &PriorityQueue{{nodeID: startID, time: 0}}
+	backwardPQ := &PriorityQueue{{nodeID: endID, time: 0}}
 	heap.Init(forwardPQ)
 	heap.Init(backwardPQ)
-	bestDist := math.Inf(1)
+	bestTime := math.Inf(1)
 	meetingNode := int64(-1)
 	for forwardPQ.Len() > 0 && backwardPQ.Len() > 0 {
 		//Check stopping condition.
-		forwardTop := (*forwardPQ)[0].distance
-		backwardTop := (*backwardPQ)[0].distance
-		if forwardTop+backwardTop >= bestDist {
+		forwardTop := (*forwardPQ)[0].time
+		backwardTop := (*backwardPQ)[0].time
+		if forwardTop+backwardTop >= bestTime {
 			break
 		}
 		//Forward step.
@@ -43,17 +43,17 @@ func BidirectionalDijkstra(g *Graph, startID int64, endID int64) ([]int64, float
 				if forwardVisited[edge.To] {
 					continue
 				}
-				newDist := forwardDist[forwardCurrent.nodeID] + edge.Distance
-				existing, ok := forwardDist[edge.To]
-				if !ok || newDist < existing {
-					forwardDist[edge.To] = newDist
+				newTime := forwardTime[forwardCurrent.nodeID] + edge.Time
+				existing, ok := forwardTime[edge.To]
+				if !ok || newTime < existing {
+					forwardTime[edge.To] = newTime
 					forwardPrev[edge.To] = forwardCurrent.nodeID
-					heap.Push(forwardPQ, &Item{nodeID: edge.To, distance: newDist})
+					heap.Push(forwardPQ, &Item{nodeID: edge.To, time: newTime})
 					//Check for path intersection during relaxation.
-					if backDist, ok := backwardDist[edge.To]; ok {
-						combined := newDist + backDist
-						if combined < bestDist {
-							bestDist = combined
+					if backTime, ok := backwardTime[edge.To]; ok {
+						combined := newTime + backTime
+						if combined < bestTime {
+							bestTime = combined
 							meetingNode = edge.To
 						}
 					}
@@ -69,17 +69,17 @@ func BidirectionalDijkstra(g *Graph, startID int64, endID int64) ([]int64, float
 				if backwardVisited[edge.To] {
 					continue
 				}
-				newDist := backwardDist[backwardCurrent.nodeID] + edge.Distance
-				existing, ok := backwardDist[edge.To]
-				if !ok || newDist < existing {
-					backwardDist[edge.To] = newDist
+				newTime := backwardTime[backwardCurrent.nodeID] + edge.Time
+				existing, ok := backwardTime[edge.To]
+				if !ok || newTime < existing {
+					backwardTime[edge.To] = newTime
 					backwardPrev[edge.To] = backwardCurrent.nodeID
-					heap.Push(backwardPQ, &Item{nodeID: edge.To, distance: newDist})
+					heap.Push(backwardPQ, &Item{nodeID: edge.To, time: newTime})
 					//Check path intersection during relaxation.
-					if fDist, ok := forwardDist[edge.To]; ok {
-						combined := newDist + fDist
-						if combined < bestDist {
-							bestDist = combined
+					if fTime, ok := forwardTime[edge.To]; ok {
+						combined := newTime + fTime
+						if combined < bestTime {
+							bestTime = combined
 							meetingNode = edge.To
 						}
 					}
@@ -112,5 +112,5 @@ func BidirectionalDijkstra(g *Graph, startID int64, endID int64) ([]int64, float
 		backwardPath = append(backwardPath, curr)
 	}
 	path := append(forwardPath, backwardPath...)
-	return path, bestDist, nil
+	return path, bestTime, nil
 }

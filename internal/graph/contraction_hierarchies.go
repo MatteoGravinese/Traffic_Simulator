@@ -42,30 +42,30 @@ func NewCHGraph(g *Graph) *CHGraph {
 	}
 	for from, edges := range g.Edges {
 		for _, edge := range edges {
-			addOrUpdateEdge(ch, from, edge.To, edge.Distance, false, -1)
+			addOrUpdateEdge(ch, from, edge.To, edge.Time, false, -1)
 		}
 	}
 	return ch
 }
 
-// Helper to get the distance of a direct edge/shortcut between two nodes in the forward graph.
-func getEdgeDistance(ch *CHGraph, fromID int64, toID int64) (float64, bool) {
+// Helper to get the time of a direct edge/shortcut between two nodes in the forward graph.
+func getEdgeTime(ch *CHGraph, fromID int64, toID int64) (float64, bool) {
 	for _, edge := range ch.Edges[fromID] {
 		if edge.To == toID {
-			return edge.Distance, true
+			return edge.Time, true
 		}
 	}
 	return math.Inf(1), false
 }
 
 // Helper to add or update an edge in both the forward and backward graph.
-func addOrUpdateEdge(ch *CHGraph, fromID int64, toID int64, dist float64, isShortcut bool, middleNode int64) {
+func addOrUpdateEdge(ch *CHGraph, fromID int64, toID int64, time float64, isShortcut bool, middleNode int64) {
 	//Update the forward edges (outgoing).
 	found := false
 	for i, edge := range ch.Edges[fromID] {
 		if edge.To == toID {
-			if dist < edge.Distance {
-				ch.Edges[fromID][i].Distance = dist
+			if time < edge.Time {
+				ch.Edges[fromID][i].Time = time
 				ch.Edges[fromID][i].IsShortcut = isShortcut
 				ch.Edges[fromID][i].MiddleNode = middleNode
 			}
@@ -76,9 +76,8 @@ func addOrUpdateEdge(ch *CHGraph, fromID int64, toID int64, dist float64, isShor
 	if !found {
 		ch.Edges[fromID] = append(ch.Edges[fromID], CHEdge{
 			Edge: Edge{
-				To:       toID,
-				Distance: dist,
-				Speed:    0,
+				To:   toID,
+				Time: time,
 			},
 			IsShortcut: isShortcut,
 			MiddleNode: middleNode,
@@ -88,8 +87,8 @@ func addOrUpdateEdge(ch *CHGraph, fromID int64, toID int64, dist float64, isShor
 	foundIn := false
 	for i, edge := range ch.InEdges[toID] {
 		if edge.To == fromID {
-			if dist < edge.Distance {
-				ch.InEdges[toID][i].Distance = dist
+			if time < edge.Time {
+				ch.InEdges[toID][i].Time = time
 				ch.InEdges[toID][i].IsShortcut = isShortcut
 				ch.InEdges[toID][i].MiddleNode = middleNode
 			}
@@ -100,9 +99,8 @@ func addOrUpdateEdge(ch *CHGraph, fromID int64, toID int64, dist float64, isShor
 	if !foundIn {
 		ch.InEdges[toID] = append(ch.InEdges[toID], CHEdge{
 			Edge: Edge{
-				To:       fromID,
-				Distance: dist,
-				Speed:    0,
+				To:   fromID,
+				Time: time,
 			},
 			IsShortcut: isShortcut,
 			MiddleNode: middleNode,
@@ -111,26 +109,24 @@ func addOrUpdateEdge(ch *CHGraph, fromID int64, toID int64, dist float64, isShor
 }
 
 // witnessSearch checks if a path exists between fromID and toID in the uncontracted graph.
-func witnessSearch(ch *CHGraph, fromID int64, toID int64, ignoredNode int64, maxDist float64, hopLimit int) bool {
-	dist := make(map[int64]float64)
-	dist[fromID] = 0
+func witnessSearch(ch *CHGraph, fromID int64, toID int64, ignoredNode int64, maxTime float64, hopLimit int) bool {
+	timeTo := make(map[int64]float64)
+	timeTo[fromID] = 0
 	hops := make(map[int64]int)
 	hops[fromID] = 0
-	pq := &PriorityQueue{{nodeID: fromID, distance: 0}}
+	pq := &PriorityQueue{{nodeID: fromID, time: 0}}
 	heap.Init(pq)
 	for pq.Len() > 0 {
 		current := heap.Pop(pq).(*Item)
-
 		if current.nodeID == toID {
-			return current.distance <= maxDist
+			return current.time <= maxTime
 		}
-		if current.distance > maxDist {
+		if current.time > maxTime {
 			return false
 		}
 		if hops[current.nodeID] >= hopLimit {
 			continue
 		}
-
 		for _, edge := range ch.Edges[current.nodeID] {
 			if edge.To == ignoredNode {
 				continue
@@ -139,13 +135,12 @@ func witnessSearch(ch *CHGraph, fromID int64, toID int64, ignoredNode int64, max
 			if _, contracted := ch.Ranks[edge.To]; contracted {
 				continue
 			}
-
-			newDist := dist[current.nodeID] + edge.Distance
-			existing, ok := dist[edge.To]
-			if !ok || newDist < existing {
-				dist[edge.To] = newDist
+			newTime := timeTo[current.nodeID] + edge.Time
+			existing, ok := timeTo[edge.To]
+			if !ok || newTime < existing {
+				timeTo[edge.To] = newTime
 				hops[edge.To] = hops[current.nodeID] + 1
-				heap.Push(pq, &Item{nodeID: edge.To, distance: newDist})
+				heap.Push(pq, &Item{nodeID: edge.To, time: newTime})
 			}
 		}
 	}
@@ -170,14 +165,14 @@ func contractNode(ch *CHGraph, nodeID int64, rank int, hopLimit int) int {
 			if u == w {
 				continue
 			}
-			shortcutDist := inEdge.Distance + outEdge.Distance
+			shortcutTime := inEdge.Time + outEdge.Time
 			//If an existing direct edge is already shorter, skip witness search.
-			if existingDist, exists := getEdgeDistance(ch, u, w); exists && existingDist <= shortcutDist {
+			if existingTime, exists := getEdgeTime(ch, u, w); exists && existingTime <= shortcutTime {
 				continue
 			}
-			witnessExists := witnessSearch(ch, u, w, nodeID, shortcutDist, hopLimit)
+			witnessExists := witnessSearch(ch, u, w, nodeID, shortcutTime, hopLimit)
 			if !witnessExists {
-				addOrUpdateEdge(ch, u, w, shortcutDist, true, nodeID)
+				addOrUpdateEdge(ch, u, w, shortcutTime, true, nodeID)
 				shortcuts++
 			}
 		}
@@ -209,11 +204,11 @@ func calculateEdgeDifference(ch *CHGraph, nodeID int64, hopLimit int) int {
 			if u == w {
 				continue
 			}
-			shortcutDist := inEdge.Distance + outEdge.Distance
-			if existingDist, exists := getEdgeDistance(ch, u, w); exists && existingDist <= shortcutDist {
+			shortcutTime := inEdge.Time + outEdge.Time
+			if existingTime, exists := getEdgeTime(ch, u, w); exists && existingTime <= shortcutTime {
 				continue
 			}
-			witnessExists := witnessSearch(ch, u, w, nodeID, shortcutDist, hopLimit)
+			witnessExists := witnessSearch(ch, u, w, nodeID, shortcutTime, hopLimit)
 			if !witnessExists {
 				shortcuts++
 			}
@@ -244,7 +239,7 @@ func Preprocess(g *Graph) *CHGraph {
 	//Compute initial importance.
 	for id := range ch.Nodes {
 		edgeDiff := calculateEdgeDifference(ch, id, hopLimit)
-		heap.Push(pq, &Item{nodeID: id, distance: float64(edgeDiff)})
+		heap.Push(pq, &Item{nodeID: id, time: float64(edgeDiff)})
 	}
 	rank := 0
 	for pq.Len() > 0 {
@@ -253,8 +248,8 @@ func Preprocess(g *Graph) *CHGraph {
 		//Recompute the edge difference.
 		currentEdgeDiff := calculateEdgeDifference(ch, nodeID, hopLimit)
 		//If it's no longer the minimum, push it back and continue.
-		if pq.Len() > 0 && float64(currentEdgeDiff) > (*pq)[0].distance {
-			item.distance = float64(currentEdgeDiff)
+		if pq.Len() > 0 && float64(currentEdgeDiff) > (*pq)[0].time {
+			item.time = float64(currentEdgeDiff)
 			heap.Push(pq, item)
 			continue
 		}
@@ -267,34 +262,34 @@ func Preprocess(g *Graph) *CHGraph {
 
 // CHQuery runs a bidirectional upward search on the CH graph.
 func CHQuery(ch *CHGraph, startID int64, endID int64) ([]int64, float64, error) {
-	forwardDist := make(map[int64]float64)
-	backwardDist := make(map[int64]float64)
+	forwardTime := make(map[int64]float64)
+	backwardTime := make(map[int64]float64)
 	forwardPrev := make(map[int64]int64)
 	backwardPrev := make(map[int64]int64)
 	forwardVisited := make(map[int64]bool)
 	backwardVisited := make(map[int64]bool)
-	forwardDist[startID] = 0
-	backwardDist[endID] = 0
-	forwardPQ := &PriorityQueue{{nodeID: startID, distance: 0}}
-	backwardPQ := &PriorityQueue{{nodeID: endID, distance: 0}}
+	forwardTime[startID] = 0
+	backwardTime[endID] = 0
+	forwardPQ := &PriorityQueue{{nodeID: startID, time: 0}}
+	backwardPQ := &PriorityQueue{{nodeID: endID, time: 0}}
 	heap.Init(forwardPQ)
 	heap.Init(backwardPQ)
-	bestDist := math.Inf(1)
+	bestTime := math.Inf(1)
 	meetingNode := int64(-1)
 	for forwardPQ.Len() > 0 || backwardPQ.Len() > 0 {
 		//Forward step.
 		if forwardPQ.Len() > 0 {
 			forwardCurrent := heap.Pop(forwardPQ).(*Item)
 			u := forwardCurrent.nodeID
-			if forwardCurrent.distance >= bestDist {
+			if forwardCurrent.time >= bestTime {
 				//Terminate the forward frontier early.
 				forwardPQ = &PriorityQueue{}
 			} else if !forwardVisited[u] {
 				forwardVisited[u] = true
 				if backwardVisited[u] {
-					combined := forwardDist[u] + backwardDist[u]
-					if combined < bestDist {
-						bestDist = combined
+					combined := forwardTime[u] + backwardTime[u]
+					if combined < bestTime {
+						bestTime = combined
 						meetingNode = u
 					}
 				}
@@ -303,18 +298,18 @@ func CHQuery(ch *CHGraph, startID int64, endID int64) ([]int64, float64, error) 
 					if ch.Ranks[v] <= ch.Ranks[u] {
 						continue
 					}
-					newDist := forwardDist[u] + edge.Distance
-					existing, ok := forwardDist[v]
-					if !ok || newDist < existing {
-						forwardDist[v] = newDist
+					newTime := forwardTime[u] + edge.Time
+					existing, ok := forwardTime[v]
+					if !ok || newTime < existing {
+						forwardTime[v] = newTime
 						forwardPrev[v] = u
-						if bDist, reached := backwardDist[v]; reached {
-							if newDist+bDist < bestDist {
-								bestDist = newDist + bDist
+						if bTime, reached := backwardTime[v]; reached {
+							if newTime+bTime < bestTime {
+								bestTime = newTime + bTime
 								meetingNode = v
 							}
 						}
-						heap.Push(forwardPQ, &Item{nodeID: v, distance: newDist})
+						heap.Push(forwardPQ, &Item{nodeID: v, time: newTime})
 					}
 				}
 			}
@@ -323,15 +318,15 @@ func CHQuery(ch *CHGraph, startID int64, endID int64) ([]int64, float64, error) 
 		if backwardPQ.Len() > 0 {
 			backwardCurrent := heap.Pop(backwardPQ).(*Item)
 			v := backwardCurrent.nodeID
-			if backwardCurrent.distance >= bestDist {
+			if backwardCurrent.time >= bestTime {
 				//Terminate the backward frontier early.
 				backwardPQ = &PriorityQueue{}
 			} else if !backwardVisited[v] {
 				backwardVisited[v] = true
 				if forwardVisited[v] {
-					combined := forwardDist[v] + backwardDist[v]
-					if combined < bestDist {
-						bestDist = combined
+					combined := forwardTime[v] + backwardTime[v]
+					if combined < bestTime {
+						bestTime = combined
 						meetingNode = v
 					}
 				}
@@ -340,31 +335,31 @@ func CHQuery(ch *CHGraph, startID int64, endID int64) ([]int64, float64, error) 
 					if ch.Ranks[w] <= ch.Ranks[v] {
 						continue
 					}
-					newDist := backwardDist[v] + edge.Distance
-					existing, ok := backwardDist[w]
-					if !ok || newDist < existing {
-						backwardDist[w] = newDist
+					newTime := backwardTime[v] + edge.Time
+					existing, ok := backwardTime[w]
+					if !ok || newTime < existing {
+						backwardTime[w] = newTime
 						backwardPrev[w] = v
-						if fDist, reached := forwardDist[w]; reached {
-							if fDist+newDist < bestDist {
-								bestDist = fDist + newDist
+						if fTime, reached := forwardTime[w]; reached {
+							if fTime+newTime < bestTime {
+								bestTime = fTime + newTime
 								meetingNode = w
 							}
 						}
-						heap.Push(backwardPQ, &Item{nodeID: w, distance: newDist})
+						heap.Push(backwardPQ, &Item{nodeID: w, time: newTime})
 					}
 				}
 			}
 		}
 	}
-	if meetingNode == -1 || math.IsInf(bestDist, 1) {
+	if meetingNode == -1 || math.IsInf(bestTime, 1) {
 		return nil, 0, errors.New("no path found")
 	}
 	path, err := unpackPath(ch, forwardPrev, backwardPrev, startID, endID, meetingNode)
 	if err != nil {
 		return nil, 0, err
 	}
-	return path, bestDist, nil
+	return path, bestTime, nil
 }
 
 // unpackPath reconstructs the full path by recursively unpacking shortcuts.

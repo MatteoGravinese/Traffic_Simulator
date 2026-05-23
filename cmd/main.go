@@ -61,7 +61,7 @@ func main() {
 		}
 	}()
 	cch := graph.PreprocessCCH(g)
-	cch.Customize()
+	cch.Customize(map[int64]map[int64]float64{})
 	doneCCH <- true
 	time.Sleep(100 * time.Millisecond)
 	fmt.Println("CCH ready!")

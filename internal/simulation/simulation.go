@@ -8,16 +8,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type Algorithm int
-
-const (
-	AlgoCH Algorithm = iota
-	AlgoDijkstra
-	AlgoBidirectionalDijkstra
-	AlgoAStar
-	AlgoNBAStar
-)
-
 type Vehicle struct {
 	ID                int
 	StartID           int64
@@ -25,7 +15,6 @@ type Vehicle struct {
 	Path              []int64
 	CurrentIndex      int
 	DistanceTravelled float64
-	Algorithm         Algorithm
 }
 
 // SimState holds all shared simulation state.
@@ -42,7 +31,7 @@ type SimState struct {
 }
 
 // NewSimState creates a new simulation state.
-func NewSimState(g *graph.Graph, ch *graph.CHGraph, rdb *redis.Client) *SimState {
+func NewSimState(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCHGraph, rdb *redis.Client) *SimState {
 	nodeIDs := make([]int64, 0, len(g.Nodes))
 	for id := range g.Nodes {
 		nodeIDs = append(nodeIDs, id)
@@ -50,6 +39,7 @@ func NewSimState(g *graph.Graph, ch *graph.CHGraph, rdb *redis.Client) *SimState
 	return &SimState{
 		G:          g,
 		CH:         ch,
+		CCH:        cch,
 		Vehicles:   make([]*Vehicle, 0),
 		Congestion: make(map[int64]map[int64]float64),
 		RDB:        rdb,
@@ -57,7 +47,7 @@ func NewSimState(g *graph.Graph, ch *graph.CHGraph, rdb *redis.Client) *SimState
 	}
 }
 
-func spawnVehicle(state *SimState, id int, algorithm Algorithm) *Vehicle {
+func spawnVehicle(state *SimState, id int) *Vehicle {
 	var path []int64
 	var err error
 	var startID int64
@@ -69,7 +59,7 @@ func spawnVehicle(state *SimState, id int, algorithm Algorithm) *Vehicle {
 		for endID == startID {
 			endID = state.NodeIDs[rand.Intn(len(state.NodeIDs))]
 		}
-		path, _, err = calculateRoute(state, startID, endID, algorithm)
+		path, _, err = calculateRoute(state, startID, endID)
 		if err == nil {
 			break
 		}
@@ -81,43 +71,48 @@ func spawnVehicle(state *SimState, id int, algorithm Algorithm) *Vehicle {
 		Path:              path,
 		CurrentIndex:      0,
 		DistanceTravelled: 0,
-		Algorithm:         algorithm,
 	}
 }
 
-func calculateRoute(state *SimState, startID int64, endID int64, algorithm Algorithm) ([]int64, float64, error) {
-	if algorithm == AlgoDijkstra {
-		return graph.Dijkstra(state.G, startID, endID)
-	}
-	if algorithm == AlgoBidirectionalDijkstra {
-		return graph.BidirectionalDijkstra(state.G, startID, endID)
-	}
-	if algorithm == AlgoAStar {
-		return graph.AStar(state.G, startID, endID)
-	}
-	if algorithm == AlgoNBAStar {
-		return graph.NewBidirectionalAStar(state.G, startID, endID)
+func calculateRoute(state *SimState, startID int64, endID int64) ([]int64, float64, error) {
+	if state.TrafficAware {
+		return graph.CCHQuery(state.CCH, startID, endID)
 	}
 	return graph.CHQuery(state.CH, startID, endID)
 }
 
-func tick(state *SimState, vehicles []*Vehicle, tickInterval float64) {
-	//Iterate through all vehicles
+func tick(state *SimState, vehicles []*Vehicle, tickInterval float64, tickCount int) {
+	//Refresh the global congestion maps first so current data is available.
+	updateCongestion(state, vehicles)
+	// Update congestion in waves based on vehicle ID band.
+	if state.TrafficAware {
+		band := tickCount % 5
+		state.CCH.Customize(state.Congestion)
+		for i, vehicle := range vehicles {
+			if vehicle.ID%5 == band {
+				newPath, _, err := graph.CCHQuery(state.CCH, vehicle.Path[vehicle.CurrentIndex], vehicle.EndID)
+				if err == nil {
+					vehicles[i].Path = append(vehicle.Path[:vehicle.CurrentIndex+1], newPath[1:]...)
+				}
+			}
+		}
+	}
+	//Iterate through all vehicles to move them.
 	for i, vehicle := range vehicles {
 		curr_node := vehicle.Path[vehicle.CurrentIndex]
 		next_node := vehicle.Path[vehicle.CurrentIndex+1]
 		var firstEdge graph.Edge
-		//Find the destination node.
+		// Find the destination node.
 		for _, edge := range state.G.Edges[curr_node] {
 			if edge.To == next_node {
 				firstEdge = edge
 				break
 			}
 		}
-		//Distance travelled
+		// Distance travelled.
 		remaining := tickInterval * firstEdge.Speed / 3600
-		//If we pass through an intersection, see how far down we go.
-		//If we go past more than one intersection, see how far we'll end up overall.
+		// If we pass through an intersection, see how far down the next road we go.
+		// If we go past more than one intersection, see how far we'll end up overall.
 		for remaining > 0 && vehicle.CurrentIndex < len(vehicle.Path)-1 {
 			curr_node := vehicle.Path[vehicle.CurrentIndex]
 			next_node := vehicle.Path[vehicle.CurrentIndex+1]
@@ -133,9 +128,9 @@ func tick(state *SimState, vehicles []*Vehicle, tickInterval float64) {
 				remaining -= distToNext
 				vehicle.DistanceTravelled = 0
 				vehicle.CurrentIndex++
-				//If the vehicle has reached its destination, spawn a new one in.
+				// If the vehicle has reached its destination, spawn a new one in.
 				if vehicle.CurrentIndex >= len(vehicle.Path)-1 {
-					vehicles[i] = spawnVehicle(state, vehicle.ID, vehicle.Algorithm)
+					vehicles[i] = spawnVehicle(state, vehicle.ID)
 					break
 				}
 			} else {
@@ -144,10 +139,11 @@ func tick(state *SimState, vehicles []*Vehicle, tickInterval float64) {
 			}
 		}
 	}
-	updateCongestion(state, vehicles)
 }
 
 func updateCongestion(state *SimState, vehicles []*Vehicle) {
+	// Clear the old map completely to ensure dead traffic/moved cars don't persist
+	state.Congestion = make(map[int64]map[int64]float64)
 	total_cars := make(map[int64]map[int64]int)
 	for _, vehicle := range vehicles {
 		curr_node := vehicle.Path[vehicle.CurrentIndex]

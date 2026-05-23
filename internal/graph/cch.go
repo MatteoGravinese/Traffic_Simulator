@@ -214,19 +214,29 @@ func PreprocessCCH(g *Graph) *CCHGraph {
 	return cch
 }
 
-// Customize evaluates original edge weights and propagates them bottom-up through the shortcuts.
-func (cch *CCHGraph) Customize() {
+// Customize evaluates original edge weights, adjusts them for traffic congestion,
+// and propagates them bottom-up through the shortcuts.
+func (cch *CCHGraph) Customize(congestion map[int64]map[int64]float64) {
 	for _, edges := range cch.Edges {
 		for _, e := range edges {
 			if !e.IsShortcut {
-				e.CustomizedWeight = e.OriginalTime
+				//Base weight is the original travel time.
+				weight := e.OriginalTime
+				//Check if there is dynamic congestion data for this edge.
+				if toMap, exists := congestion[e.From]; exists {
+					if density, hasDensity := toMap[e.To]; hasDensity && density > 0 {
+						//Traffic formula: travel time increases as vehicle density grows.
+						weight = e.OriginalTime * (1.0 + density)
+					}
+				}
+				e.CustomizedWeight = weight
 			} else {
 				e.CustomizedWeight = math.MaxFloat64
 				e.MiddleNode = -1
 			}
 		}
 	}
-	//Propagate weights in bottom-up rank order.
+	//Propagate updated weights in bottom-up rank order (unchanged).
 	for _, task := range cch.CustomizationTasks {
 		if task.InEdge.CustomizedWeight == math.MaxFloat64 || task.OutEdge.CustomizedWeight == math.MaxFloat64 {
 			continue

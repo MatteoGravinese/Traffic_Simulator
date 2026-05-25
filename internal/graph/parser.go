@@ -110,9 +110,10 @@ func ParseOSM(filename string) (*Graph, error) {
 				fmt.Sscanf(tag.Value, "%d", &lanes)
 			}
 			if tag.Key == "oneway" {
-				if tag.Value == "yes" || tag.Value == "1" || tag.Value == "true" {
+				switch tag.Value {
+				case "yes", "1", "true":
 					oneway = true
-				} else if tag.Value == "-1" {
+				case "-1":
 					onewayReverse = true
 				}
 			}
@@ -134,10 +135,10 @@ func ParseOSM(filename string) (*Graph, error) {
 			dist := haversine(from.Lat, from.Lon, to.Lat, to.Lon)
 			time := dist / speed
 			if !onewayReverse {
-				g.AddEdge(fromID, Edge{To: toID, Distance: dist, Speed: speed, Lanes: lanes, Time: time})
+				g.AddEdge(fromID, Edge{To: toID, Distance: dist, Speed: speed, Lanes: lanes, Time: time, Highway: highway})
 			}
 			if !oneway {
-				g.AddEdge(toID, Edge{To: fromID, Distance: dist, Speed: speed, Lanes: lanes, Time: time})
+				g.AddEdge(toID, Edge{To: fromID, Distance: dist, Speed: speed, Lanes: lanes, Time: time, Highway: highway})
 			}
 		}
 	}

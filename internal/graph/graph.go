@@ -14,6 +14,7 @@ type Edge struct {
 	Speed    float64
 	Lanes    int
 	Time     float64
+	Highway  string
 }
 
 //Graph holds all nodes and edges in memory.

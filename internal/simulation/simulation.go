@@ -1,6 +1,7 @@
 package simulation
 
 import (
+	"math"
 	"math/rand"
 	"sync"
 
@@ -19,16 +20,21 @@ type Vehicle struct {
 
 // SimState holds all shared simulation state.
 type SimState struct {
-	G            *graph.Graph
-	CH           *graph.CHGraph
-	CCH          *graph.CCHGraph
-	Vehicles     []*Vehicle
-	Congestion   map[int64]map[int64]float64 //edge congestion: from -> to -> count.
-	mu           sync.Mutex
-	RDB          *redis.Client
-	NodeIDs      []int64 //cached list of all node IDs for random selection.
-	TrafficAware bool
+	G             *graph.Graph
+	CH            *graph.CHGraph
+	CCH           *graph.CCHGraph
+	Vehicles      []*Vehicle
+	Congestion    map[int64]map[int64]float64 //edge congestion: from -> to -> count.
+	CongestionEMA map[int64]map[int64]float64
+	mu            sync.RWMutex
+	RDB           *redis.Client
+	NodeIDs       []int64 //cached list of all node IDs for random selection.
+	TrafficAware  bool
 }
+
+// RLock/RUnlock expose the read-side of the mutex for the HTTP server.
+func (s *SimState) RLock()   { s.mu.RLock() }
+func (s *SimState) RUnlock() { s.mu.RUnlock() }
 
 // NewSimState creates a new simulation state.
 func NewSimState(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCHGraph, rdb *redis.Client) *SimState {
@@ -37,17 +43,18 @@ func NewSimState(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCHGraph, rdb *re
 		nodeIDs = append(nodeIDs, id)
 	}
 	return &SimState{
-		G:          g,
-		CH:         ch,
-		CCH:        cch,
-		Vehicles:   make([]*Vehicle, 0),
-		Congestion: make(map[int64]map[int64]float64),
-		RDB:        rdb,
-		NodeIDs:    nodeIDs,
+		G:             g,
+		CH:            ch,
+		CCH:           cch,
+		Vehicles:      make([]*Vehicle, 0),
+		Congestion:    make(map[int64]map[int64]float64),
+		CongestionEMA: make(map[int64]map[int64]float64),
+		RDB:           rdb,
+		NodeIDs:       nodeIDs,
 	}
 }
 
-func spawnVehicle(state *SimState, id int) *Vehicle {
+func SpawnVehicle(state *SimState, id int) *Vehicle {
 	var path []int64
 	var err error
 	var startID int64
@@ -81,7 +88,9 @@ func calculateRoute(state *SimState, startID int64, endID int64) ([]int64, float
 	return graph.CHQuery(state.CH, startID, endID)
 }
 
-func tick(state *SimState, vehicles []*Vehicle, tickInterval float64, tickCount int) {
+func Tick(state *SimState, vehicles []*Vehicle, tickInterval float64, tickCount int) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
 	//Refresh the global congestion maps first so current data is available.
 	updateCongestion(state, vehicles)
 	// Update congestion in waves based on vehicle ID band.
@@ -130,7 +139,7 @@ func tick(state *SimState, vehicles []*Vehicle, tickInterval float64, tickCount 
 				vehicle.CurrentIndex++
 				// If the vehicle has reached its destination, spawn a new one in.
 				if vehicle.CurrentIndex >= len(vehicle.Path)-1 {
-					vehicles[i] = spawnVehicle(state, vehicle.ID)
+					vehicles[i] = SpawnVehicle(state, vehicle.ID)
 					break
 				}
 			} else {
@@ -142,7 +151,7 @@ func tick(state *SimState, vehicles []*Vehicle, tickInterval float64, tickCount 
 }
 
 func updateCongestion(state *SimState, vehicles []*Vehicle) {
-	// Clear the old map completely to ensure dead traffic/moved cars don't persist
+	// 1. Clear the current snapshot map completely to handle live positional counts
 	state.Congestion = make(map[int64]map[int64]float64)
 	total_cars := make(map[int64]map[int64]int)
 	for _, vehicle := range vehicles {
@@ -153,6 +162,12 @@ func updateCongestion(state *SimState, vehicles []*Vehicle) {
 		}
 		total_cars[curr_node][next_node]++
 	}
+
+	// Define your EMA smoothing factor alpha (0.2 is a balanced starting default)
+	const alpha = 0.2
+	const maxDensity = 67.0
+
+	// 2. Compute current raw snapshot density metrics
 	for node_from := range total_cars {
 		for node_to, cars := range total_cars[node_from] {
 			var street_length float64
@@ -164,10 +179,60 @@ func updateCongestion(state *SimState, vehicles []*Vehicle) {
 					break
 				}
 			}
+
 			if state.Congestion[node_from] == nil {
 				state.Congestion[node_from] = make(map[int64]float64)
 			}
-			state.Congestion[node_from][node_to] = float64(cars) / (street_length * lane_number)
+
+			// Calculate standard snapshot density
+			rawCongestion := math.Min(float64(cars)/(street_length*lane_number)/maxDensity, 1.0)
+			state.Congestion[node_from][node_to] = rawCongestion
 		}
 	}
+
+	// 3. Update the persistent CongestionEMA map using historical state
+	// Note: We iterate over CongestionEMA first to cool down streets where vehicles left
+	for node_from, targets := range state.CongestionEMA {
+		for node_to, prevEMA := range targets {
+			currentRaw := 0.0
+			if targetsMap, ok := state.Congestion[node_from]; ok {
+				if val, exists := targetsMap[node_to]; exists {
+					currentRaw = val
+				}
+			}
+
+			// Apply EMA Formula
+			newEMA := (alpha * currentRaw) + ((1.0 - alpha) * prevEMA)
+
+			// If the value drops near absolute zero, prune it to prevent memory leaks
+			if newEMA < 0.001 {
+				delete(state.CongestionEMA[node_from], node_to)
+			} else {
+				state.CongestionEMA[node_from][node_to] = newEMA
+			}
+		}
+		if len(state.CongestionEMA[node_from]) == 0 {
+			delete(state.CongestionEMA, node_from)
+		}
+	}
+
+	// 4. Capture any brand new congestion segments that weren't in the historical EMA map yet
+	for node_from, targets := range state.Congestion {
+		for node_to, currentRaw := range targets {
+			if state.CongestionEMA[node_from] == nil {
+				state.CongestionEMA[node_from] = make(map[int64]float64)
+			}
+
+			if _, exists := state.CongestionEMA[node_from][node_to]; !exists {
+				// Initialize brand new traffic with its current raw value or a small alpha step
+				state.CongestionEMA[node_from][node_to] = alpha * currentRaw
+			}
+		}
+	}
+}
+
+func (s *SimState) SetTrafficAware(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.TrafficAware = enabled
 }

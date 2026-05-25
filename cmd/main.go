@@ -3,7 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
-	"math/rand"
+
+	//	"math/rand"
 	"time"
 
 	"github.com/MatteoGravinese/Traffic_Simulator/internal/api"
@@ -66,93 +67,107 @@ func main() {
 	time.Sleep(100 * time.Millisecond)
 	fmt.Println("CCH ready!")
 	//Grab any two node IDs from the graph to test with.
-	j := 0
-	for j < 10 {
-		var startID, endID int64
-		i := 0
-		randomOffset := rand.Intn(len(g.Nodes) - 100)
-		for id := range g.Nodes {
-			if i == randomOffset {
-				startID = id
-			}
-			if i == randomOffset+100 {
-				endID = id
-			}
-			i++
-			if i > randomOffset+100 {
-				break
-			}
-		}
-		fmt.Printf("Starting Dijkstra:\n")
-		fmt.Printf("Finding path from %d to %d...\n", startID, endID)
-		start_Dijkstra := time.Now()
-		path_Dijkstra, time_Dijkstra, err := graph.Dijkstra(g, startID, endID)
-		elapsed_Dijkstra := time.Since(start_Dijkstra)
-		if err != nil {
-			fmt.Printf("No path found, skipping...\n")
-			j++
-			continue
-		}
-		fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_Dijkstra), time_Dijkstra, elapsed_Dijkstra)
-		fmt.Printf("Starting Bidirectional Dijkstra:\n")
-		fmt.Printf("Finding path from %d to %d...\n", startID, endID)
-		start_BidirectionalDijkstra := time.Now()
-		path_BidirectionalDijkstra, time_BidirectionalDijkstra, err := graph.BidirectionalDijkstra(g, startID, endID)
-		elapsed_BidirectionalDijkstra := time.Since(start_BidirectionalDijkstra)
-		if err != nil {
-			fmt.Printf("No path found, skipping...\n")
-			j++
-			continue
-		}
-		fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_BidirectionalDijkstra), time_BidirectionalDijkstra, elapsed_BidirectionalDijkstra)
-		fmt.Printf("Starting A*:\n")
-		fmt.Printf("Finding path from %d to %d...\n", startID, endID)
-		start_A := time.Now()
-		path_A, time_A, err := graph.AStar(g, startID, endID)
-		elapsed_A := time.Since(start_A)
-		if err != nil {
-			fmt.Printf("No path found, skipping...\n")
-			j++
-			continue
-		}
-		fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_A), time_A, elapsed_A)
-		fmt.Printf("Starting New Bidirectional A*:\n")
-		fmt.Printf("Finding path from %d to %d...\n", startID, endID)
-		start_New_Bidirectional_A := time.Now()
-		path_New_Bidirectional_A, time_New_Bidirectional_A, err := graph.NewBidirectionalAStar(g, startID, endID)
-		elapsed_New_Bidirectional_A := time.Since(start_New_Bidirectional_A)
-		if err != nil {
-			fmt.Printf("No path found, skipping...\n")
-			j++
-			continue
-		}
-		fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_New_Bidirectional_A), time_New_Bidirectional_A, elapsed_New_Bidirectional_A)
-		fmt.Printf("Starting Contraction Hierarchies:\n")
-		fmt.Printf("Finding path from %d to %d...\n", startID, endID)
-		start_ch := time.Now()
-		path_ch, time_ch, err := graph.CHQuery(ch, startID, endID)
-		elapsed_ch := time.Since(start_ch)
-		if err != nil {
-			fmt.Printf("No path found, skipping...\n")
-			j++
-			continue
-		}
-		fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_ch), time_ch, elapsed_ch)
-		fmt.Printf("Starting CCH:\n")
-		start_cch := time.Now()
-		path_cch, time_cch, err := graph.CCHQuery(cch, startID, endID)
-		elapsed_cch := time.Since(start_cch)
-		if err != nil {
-			fmt.Printf("No path found, skipping...\n")
-			j++
-			continue
-		}
-		fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_cch), time_cch, elapsed_cch)
-		fmt.Printf("-------------------------------------\n")
-		j++
-	}
+	// j := 0
+	// for j < 10 {
+	// 	var startID, endID int64
+	// 	i := 0
+	// 	randomOffset := rand.Intn(len(g.Nodes) - 100)
+	// 	for id := range g.Nodes {
+	// 		if i == randomOffset {
+	// 			startID = id
+	// 		}
+	// 		if i == randomOffset+100 {
+	// 			endID = id
+	// 		}
+	// 		i++
+	// 		if i > randomOffset+100 {
+	// 			break
+	// 		}
+	// 	}
+	// 	fmt.Printf("Starting Dijkstra:\n")
+	// 	fmt.Printf("Finding path from %d to %d...\n", startID, endID)
+	// 	start_Dijkstra := time.Now()
+	// 	path_Dijkstra, time_Dijkstra, err := graph.Dijkstra(g, startID, endID)
+	// 	elapsed_Dijkstra := time.Since(start_Dijkstra)
+	// 	if err != nil {
+	// 		fmt.Printf("No path found, skipping...\n")
+	// 		j++
+	// 		continue
+	// 	}
+	// 	fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_Dijkstra), time_Dijkstra, elapsed_Dijkstra)
+	// 	fmt.Printf("Starting Bidirectional Dijkstra:\n")
+	// 	fmt.Printf("Finding path from %d to %d...\n", startID, endID)
+	// 	start_BidirectionalDijkstra := time.Now()
+	// 	path_BidirectionalDijkstra, time_BidirectionalDijkstra, err := graph.BidirectionalDijkstra(g, startID, endID)
+	// 	elapsed_BidirectionalDijkstra := time.Since(start_BidirectionalDijkstra)
+	// 	if err != nil {
+	// 		fmt.Printf("No path found, skipping...\n")
+	// 		j++
+	// 		continue
+	// 	}
+	// 	fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_BidirectionalDijkstra), time_BidirectionalDijkstra, elapsed_BidirectionalDijkstra)
+	// 	fmt.Printf("Starting A*:\n")
+	// 	fmt.Printf("Finding path from %d to %d...\n", startID, endID)
+	// 	start_A := time.Now()
+	// 	path_A, time_A, err := graph.AStar(g, startID, endID)
+	// 	elapsed_A := time.Since(start_A)
+	// 	if err != nil {
+	// 		fmt.Printf("No path found, skipping...\n")
+	// 		j++
+	// 		continue
+	// 	}
+	// 	fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_A), time_A, elapsed_A)
+	// 	fmt.Printf("Starting New Bidirectional A*:\n")
+	// 	fmt.Printf("Finding path from %d to %d...\n", startID, endID)
+	// 	start_New_Bidirectional_A := time.Now()
+	// 	path_New_Bidirectional_A, time_New_Bidirectional_A, err := graph.NewBidirectionalAStar(g, startID, endID)
+	// 	elapsed_New_Bidirectional_A := time.Since(start_New_Bidirectional_A)
+	// 	if err != nil {
+	// 		fmt.Printf("No path found, skipping...\n")
+	// 		j++
+	// 		continue
+	// 	}
+	// 	fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_New_Bidirectional_A), time_New_Bidirectional_A, elapsed_New_Bidirectional_A)
+	// 	fmt.Printf("Starting Contraction Hierarchies:\n")
+	// 	fmt.Printf("Finding path from %d to %d...\n", startID, endID)
+	// 	start_ch := time.Now()
+	// 	path_ch, time_ch, err := graph.CHQuery(ch, startID, endID)
+	// 	elapsed_ch := time.Since(start_ch)
+	// 	if err != nil {
+	// 		fmt.Printf("No path found, skipping...\n")
+	// 		j++
+	// 		continue
+	// 	}
+	// 	fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_ch), time_ch, elapsed_ch)
+	// 	fmt.Printf("Starting CCH:\n")
+	// 	start_cch := time.Now()
+	// 	path_cch, time_cch, err := graph.CCHQuery(cch, startID, endID)
+	// 	elapsed_cch := time.Since(start_cch)
+	// 	if err != nil {
+	// 		fmt.Printf("No path found, skipping...\n")
+	// 		j++
+	// 		continue
+	// 	}
+	// 	fmt.Printf("Path found. %d nodes, %.2f hours in %v\n", len(path_cch), time_cch, elapsed_cch)
+	// 	fmt.Printf("-------------------------------------\n")
+	// 	j++
+	// }
 	state := simulation.NewSimState(g, ch, cch, rdb)
 	fmt.Println("Starting web server on http://localhost:8080...")
 	go api.StartServer(g, state)
+	numVehicles := 10000
+	for i := range numVehicles {
+		state.Vehicles = append(state.Vehicles, simulation.SpawnVehicle(state, i))
+	}
+	fmt.Println("Vehicles spawned.")
+	//Run the simulation loop.
+	go func() {
+		tickCount := 0
+		for {
+			simulation.Tick(state, state.Vehicles, 30.0, tickCount)
+			tickCount++
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
 	select {}
 }

@@ -11,8 +11,7 @@ import (
 type CCHEdge struct {
 	From             int64
 	To               int64
-	OriginalTime     float64
-	Lanes            int
+	OriginalTime     float64 // Free-flow travel time in hours (Distance / Speed).
 	IsShortcut       bool
 	MiddleNode       int64
 	CustomizedWeight float64
@@ -68,7 +67,6 @@ func (cch *CCHGraph) getOrCreateEdge(from, to int64, isShortcut bool) *CCHEdge {
 		From:             from,
 		To:               to,
 		OriginalTime:     0,
-		Lanes:            0,
 		IsShortcut:       isShortcut,
 		MiddleNode:       -1,
 		CustomizedWeight: math.MaxFloat64,
@@ -174,7 +172,6 @@ func PreprocessCCH(g *Graph) *CCHGraph {
 		for _, edge := range edges {
 			e := cch.getOrCreateEdge(from, edge.To, false)
 			e.OriginalTime = edge.Time
-			e.Lanes = edge.Lanes
 		}
 	}
 	//3. Add shortcut edges to CCHGraph.
@@ -208,7 +205,7 @@ func PreprocessCCH(g *Graph) *CCHGraph {
 			}
 		}
 	}
-	fmt.Printf("CCH Preprocessing complete: %d nodes, %d original/shortcut edges, %d customization tasks.\n",
+	fmt.Printf("\nCCH Preprocessing complete: %d nodes, %d original/shortcut edges, %d customization tasks.\n",
 		len(cch.Nodes), len(cch.Ranks), len(cch.CustomizationTasks))
 
 	return cch
@@ -220,13 +217,16 @@ func (cch *CCHGraph) Customize(congestion map[int64]map[int64]float64) {
 	for _, edges := range cch.Edges {
 		for _, e := range edges {
 			if !e.IsShortcut {
-				//Base weight is the original travel time.
 				weight := e.OriginalTime
-				//Check if there is dynamic congestion data for this edge.
 				if toMap, exists := congestion[e.From]; exists {
 					if density, hasDensity := toMap[e.To]; hasDensity && density > 0 {
-						//Traffic formula: travel time increases as vehicle density grows.
-						weight = e.OriginalTime * (1.0 + density)
+						// density is already normalized to [0, 1] where:
+						// 0.0 - 0.18 = free flow (< 12 vehicles/mile/lane)
+						// 0.18 - 0.45 = stable flow (12-30 vehicles/mile/lane)
+						// 0.45 - 1.0  = congested/breakdown (30-67 vehicles/mile/lane)
+						// At full congestion (density = 1.0), travel time is 4x the original.
+						// At free flow (density = 0.0), travel time is unchanged.
+						weight = e.OriginalTime * (1.0 + 3.0*density)
 					}
 				}
 				e.CustomizedWeight = weight
@@ -236,7 +236,7 @@ func (cch *CCHGraph) Customize(congestion map[int64]map[int64]float64) {
 			}
 		}
 	}
-	//Propagate updated weights in bottom-up rank order (unchanged).
+	//Propagate updated weights in bottom-up rank order.
 	for _, task := range cch.CustomizationTasks {
 		if task.InEdge.CustomizedWeight == math.MaxFloat64 || task.OutEdge.CustomizedWeight == math.MaxFloat64 {
 			continue

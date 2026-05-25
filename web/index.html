@@ -1,55 +1,238 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <title>Traffic Simulator</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Real-time traffic simulation on Pittsburgh road network with live congestion visualization." />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        body { margin: 0; padding: 0; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0f1117; font-family: 'Inter', sans-serif; }
         #map { width: 100vw; height: 100vh; }
+        .leaflet-top.leaflet-right .leaflet-control-zoom {
+            margin-top: 16px;
+            margin-right: 16px;
+        }
+        .leaflet-control-zoom a {
+            background: rgba(15,17,23,0.9) !important;
+            color: #e2e8f0 !important;
+            border-color: rgba(255,255,255,0.1) !important;
+        }
+        .leaflet-control-zoom a:hover {
+            background: rgba(51,65,85,0.95) !important;
+        }
+        #hud {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            z-index: 1000;
+            background: rgba(15, 17, 23, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 14px 18px;
+            color: #e2e8f0;
+            min-width: 210px;
+        }
+        #hud h1 {
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #94a3b8;
+            margin-bottom: 10px;
+        }
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            gap: 24px;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        .stat-label { color: #64748b; }
+        .stat-value { color: #f1f5f9; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .legend {
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.07);
+        }
+        .legend-title {
+            font-size: 11px;
+            color: #64748b;
+            margin-bottom: 6px;
+        }
+        .legend-bar {
+            width: 100%;
+            height: 7px;
+            border-radius: 4px;
+            background: linear-gradient(to right,
+                hsl(120,90%,45%),
+                hsl(60,90%,45%),
+                hsl(0,90%,45%)
+            );
+        }
+        .legend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: #475569;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
     <div id="map"></div>
+    <div id="hud">
+        <h1>Traffic Simulator</h1>
+        <div class="stat">
+            <span class="stat-label">Active EMA Edges</span>
+            <span class="stat-value" id="stat-edges">—</span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">Last update</span>
+            <span class="stat-value" id="stat-time">—</span>
+        </div>
+        <div class="legend">
+            <div class="legend-title">Congestion (EMA)</div>
+            <div class="legend-bar"></div>
+            <div class="legend-labels"><span>None</span><span>High</span></div>
+        </div>
+        <div class="stat" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.07);">
+            <span class="stat-label">Traffic-Aware Routing</span>
+            <span class="stat-value">
+                <input type="checkbox" id="traffic-aware-toggle" checked style="cursor: pointer;">
+            </span>
+        </div>
+    </div>
     <script>
-        const map = L.map('map').setView([40.4406, -79.9959], 13); // Pittsburgh
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
+        const customCanvasRenderer = L.canvas({ padding: 0.5 });
+        const map = L.map('map', {
+            zoomControl: false,
+            zoomSnap: 1,    
+            zoomDelta: 1
+        }).setView([40.4406, -79.9959], 13);
+        L.control.zoom({ position: 'topright' }).addTo(map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap © CartoDB',
+            maxZoom: 19
         }).addTo(map);
-
-        let lines = [];
-
-        function congestionToColor(value) {
-            // Clamp between 0 and 1
-            const t = Math.min(value, 1.0);
-            const r = Math.round(255 * t);
-            const g = Math.round(255 * (1 - t));
-            return `rgb(${r},${g},0)`;
+        function congestionColor(v) {
+            const t = Math.min(Math.max(v, 0), 1);
+            const hue = (1 - t) * 120;
+            return `hsl(${hue},90%,45%)`;
         }
-
+        let roadLayer = null;
+        // INTERPOLATION STORAGE: Keeps track of current visual levels vs backend targets.
+        const targetCongestionMap = new Map();
+        const currentCongestionMap = new Map();
+        let cachedRoads = [];
+        function getBBoxParams() {
+            const b = map.getBounds();
+            const z = Math.round(map.getZoom());
+            const latDelta = b.getNorth() - b.getSouth();
+            const lonDelta = b.getEast() - b.getWest();
+            const bufferMultiplier = 0.15; 
+            const latBuffer = latDelta * bufferMultiplier;
+            const lonBuffer = lonDelta * bufferMultiplier;
+            const minLat = (b.getSouth() - latBuffer).toFixed(4);
+            const minLon = (b.getWest() - lonBuffer).toFixed(4);
+            const maxLat = (b.getNorth() + latBuffer).toFixed(4);
+            const maxLon = (b.getEast() + lonBuffer).toFixed(4);
+            return `minLat=${minLat}&minLon=${minLon}&maxLat=${maxLat}&maxLon=${maxLon}&zoom=${z}`;
+        }
         function refresh() {
-            fetch('/congestion')
-                .then(res => res.json())
-                .then(data => {
-                    // Remove old lines
-                    lines.forEach(l => map.removeLayer(l));
-                    lines = [];
-                    // Draw new lines
-                    data.forEach(edge => {
-                        const line = L.polyline(
-                            [[edge.from_lat, edge.from_lon], [edge.to_lat, edge.to_lon]],
-                            { color: congestionToColor(edge.congestion), weight: 3, opacity: 0.8 }
-                        ).addTo(map);
-                        lines.push(line);
-                    });
+            Promise.all([
+                fetch(`/roads?${getBBoxParams()}`).then(r => r.json()),
+                fetch(`/congestion?${getBBoxParams()}`).then(r => r.json())
+            ]).then(([roads, congestionEMA]) => {
+                const toKey = (lat, lon) => Number(lat).toFixed(5) + "," + Number(lon).toFixed(5);
+                //Updates the network baseline targets.
+                targetCongestionMap.clear();
+                congestionEMA.forEach(e => {
+                    const key = `${toKey(e.from_lat, e.from_lon)}|${toKey(e.to_lat, e.to_lon)}`;
+                    targetCongestionMap.set(key, e.congestion);
+                    // Initializes the current map element if this road segment is completely new.
+                    if (!currentCongestionMap.has(key)) {
+                        currentCongestionMap.set(key, 0);
+                    }
                 });
+                cachedRoads = roads;
+                document.getElementById('stat-edges').textContent = congestionEMA.filter(e => e.congestion > 0).length;
+                document.getElementById('stat-time').textContent = new Date().toLocaleTimeString();
+            }).catch(err => console.error("Traffic update failed:", err));
         }
-
-        // Poll every 2 seconds
+        // 60 FPS ANIMATION LOOP: Smoothly steps values on every single screen repaint frame.
+        funcAnimTicker();
+        function funcAnimTicker() {
+            if (cachedRoads.length > 0) {
+                const currentBounds = map.getBounds();
+                const toKey = (lat, lon) => Number(lat).toFixed(5) + "," + Number(lon).toFixed(5);
+                const features = [];
+                // Interpolates the active values closer to their backend targets.
+                currentCongestionMap.forEach((currentVal, key) => {
+                    const targetVal = targetCongestionMap.get(key) || 0;
+                    // Linear Interpolation calculation factor.
+                    const delta = targetVal - currentVal;
+                    if (Math.abs(delta) < 0.005) {
+                        currentCongestionMap.set(key, targetVal);
+                    } else {
+                        currentCongestionMap.set(key, currentVal + (delta * 0.12));
+                    }
+                });
+                cachedRoads.forEach(seg => {
+                    const fromLat = seg[0], fromLon = seg[1], toLat = seg[2], toLon = seg[3];
+                    const startPoint = L.latLng(fromLat, fromLon);
+                    const endPoint = L.latLng(toLat, toLon);
+                    if (currentBounds.contains(startPoint) || currentBounds.contains(endPoint)) {
+                        const key = `${toKey(fromLat, fromLon)}|${toKey(toLat, toLon)}`;
+                        const displayCongestion = currentCongestionMap.get(key) || 0;
+                        features.push({
+                            type: 'Feature',
+                            geometry: {
+                                type: 'LineString',
+                                coordinates: [[fromLon, fromLat], [toLon, toLat]]
+                            },
+                            properties: {
+                                congestion: displayCongestion
+                            }
+                        });
+                    }
+                });
+                if (roadLayer) {
+                    map.removeLayer(roadLayer);
+                }
+                roadLayer = L.geoJSON({ type: 'FeatureCollection', features }, {
+                    renderer: customCanvasRenderer, 
+                    style: f => ({
+                        color: congestionColor(f.properties.congestion),
+                        weight: 2.0,
+                        opacity: 0.85,
+                        lineCap: 'round',
+                        lineJoin: 'round'
+                    }),
+                    interactive: false
+                }).addTo(map);
+            }
+            requestAnimationFrame(funcAnimTicker);
+        }
+        let moveTimer = null;
+        map.on('moveend zoomend', () => {
+            clearTimeout(moveTimer);
+            moveTimer = setTimeout(refresh, 300);
+        });
+        document.getElementById('traffic-aware-toggle').addEventListener('change', (e) => {
+            const isAware = e.target.checked;
+            fetch(`/config/traffic-aware?enabled=${isAware}`, { method: 'POST' })
+                .catch(err => {
+                    console.error("Failed to update routing configuration:", err);
+                    // Revert the toggle UI if the server request fails
+                    e.target.checked = !isAware;
+                });
+        });
         refresh();
-        setInterval(refresh, 2000);
+        setInterval(refresh, 500);
     </script>
 </body>
 </html>

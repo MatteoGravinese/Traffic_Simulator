@@ -88,7 +88,7 @@ func NewSimState(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCHGraph, rdb *re
 }
 
 // UpdateGraph thread-safely swaps the road network graph and hierarchy structures, and spawns new vehicles.
-func (s *SimState) UpdateGraph(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCHGraph) {
+func (s *SimState) UpdateGraph(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCHGraph, vehiclesPerEdge float64, progress func(float64)) {
 	s.mu.Lock()
 	s.G = g
 	s.CH = ch
@@ -114,22 +114,84 @@ func (s *SimState) UpdateGraph(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCH
 	}
 	s.mu.Unlock()
 	// Spawn new vehicles on the new graph.
-	numVehicles := 1000
-	if len(nodeIDs) < numVehicles {
-		numVehicles = len(nodeIDs)
+	edgeCount := 0
+	for _, edges := range g.Edges {
+		edgeCount += len(edges)
 	}
-	if numVehicles < 50 && len(nodeIDs) > 50 {
-		numVehicles = 50
+	numVehicles := 0
+	if vehiclesPerEdge > 0 {
+		numVehicles = int(math.Round(float64(edgeCount) * vehiclesPerEdge))
+		if numVehicles < 0 {
+			numVehicles = 0
+		}
 	}
 	spawned := make([]*Vehicle, 0, numVehicles)
-	if len(nodeIDs) > 1 {
-		for i := range numVehicles {
+	if len(nodeIDs) > 1 && numVehicles > 0 {
+		updateInterval := numVehicles / 200
+		if updateInterval < 1 {
+			updateInterval = 1
+		}
+		if updateInterval > 500 {
+			updateInterval = 500
+		}
+		for i := 0; i < numVehicles; i++ {
 			spawned = append(spawned, SpawnVehicle(s, i))
+			if progress != nil && ((i+1)%updateInterval == 0 || i == numVehicles-1) {
+				progress(float64(i+1) / float64(numVehicles))
+			}
 		}
 	}
 	s.mu.Lock()
 	s.Vehicles = spawned
 	s.mu.Unlock()
+	if progress != nil {
+		progress(1.0)
+	}
+	if progress != nil {
+		progress(1.0)
+	}
+}
+
+// SpawnVehicles replaces the current vehicle fleet with a new set using an explicit vehicle count.
+func (s *SimState) SpawnVehicles(vehicleCount int, progress func(float64)) {
+	s.mu.RLock()
+	g := s.G
+	nodeIDs := append([]int64(nil), s.NodeIDs...)
+	s.mu.RUnlock()
+	if g == nil {
+		if progress != nil {
+			progress(1.0)
+		}
+		return
+	}
+	numVehicles := 0
+	if vehicleCount > 0 {
+		numVehicles = vehicleCount
+	}
+	spawned := make([]*Vehicle, 0, numVehicles)
+	if len(nodeIDs) > 1 && numVehicles > 0 {
+		updateInterval := numVehicles / 200
+		if updateInterval < 1 {
+			updateInterval = 1
+		}
+		if updateInterval > 500 {
+			updateInterval = 500
+		}
+		for i := 0; i < numVehicles; i++ {
+			spawned = append(spawned, SpawnVehicle(s, i))
+			if progress != nil && ((i+1)%updateInterval == 0 || i == numVehicles-1) {
+				progress(float64(i+1) / float64(numVehicles))
+			}
+		}
+	}
+	s.mu.Lock()
+	s.Vehicles = spawned
+	s.Congestion = make(map[int64]map[int64]float64)
+	s.CongestionEMA = make(map[int64]map[int64]float64)
+	s.mu.Unlock()
+	if progress != nil {
+		progress(1.0)
+	}
 }
 
 func SpawnVehicle(state *SimState, id int) *Vehicle {
@@ -140,26 +202,27 @@ func SpawnVehicle(state *SimState, id int) *Vehicle {
 	if len(state.NodeIDs) < 2 {
 		return &Vehicle{ID: id}
 	}
-	//Keep trying new start and end nodes until a valid path is found.
-	for {
+	// Keep trying a limited number of routes to avoid blocking indefinitely.
+	maxAttempts := 50
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		startID = state.NodeIDs[rand.Intn(len(state.NodeIDs))]
 		endID = state.NodeIDs[rand.Intn(len(state.NodeIDs))]
 		for endID == startID {
 			endID = state.NodeIDs[rand.Intn(len(state.NodeIDs))]
 		}
 		path, _, err = calculateRoute(state, startID, endID)
-		if err == nil {
-			break
+		if err == nil && len(path) > 1 {
+			return &Vehicle{
+				ID:                id,
+				StartID:           startID,
+				EndID:             endID,
+				Path:              path,
+				CurrentIndex:      0,
+				DistanceTravelled: 0,
+			}
 		}
 	}
-	return &Vehicle{
-		ID:                id,
-		StartID:           startID,
-		EndID:             endID,
-		Path:              path,
-		CurrentIndex:      0,
-		DistanceTravelled: 0,
-	}
+	return &Vehicle{ID: id}
 }
 
 func calculateRoute(state *SimState, startID int64, endID int64) ([]int64, float64, error) {
@@ -181,13 +244,18 @@ func Tick(state *SimState, tickInterval float64, tickCount int) {
 	updateCongestion(state, vehicles)
 	// Update congestion in waves based on vehicle ID band.
 	if state.TrafficAware {
-		band := tickCount % 5
+		const maxVehiclesPerTick = 30
+		bandCount := (len(vehicles) + maxVehiclesPerTick - 1) / maxVehiclesPerTick
+		if bandCount < 1 {
+			bandCount = 1
+		}
+		band := tickCount % bandCount
 		state.CCH.Customize(state.Congestion)
 		for i, vehicle := range vehicles {
 			if len(vehicle.Path) < 2 || vehicle.CurrentIndex >= len(vehicle.Path)-1 {
 				continue
 			}
-			if vehicle.ID%5 == band {
+			if vehicle.ID%bandCount == band {
 				newPath, _, err := graph.CCHQuery(state.CCH, vehicle.Path[vehicle.CurrentIndex], vehicle.EndID)
 				if err == nil {
 					vehicles[i].Path = append(vehicle.Path[:vehicle.CurrentIndex+1], newPath[1:]...)

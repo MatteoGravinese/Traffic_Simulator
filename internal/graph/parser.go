@@ -35,7 +35,7 @@ type OSMData struct {
 }
 
 // ParseOSM reads an .osm file and builds a graph from it.
-func ParseOSM(filename string) (*Graph, error) {
+func ParseOSM(filename string, progress func(float64)) (*Graph, error) {
 	routableHighways := map[string]bool{
 		"motorway": true, "motorway_link": true,
 		"trunk": true, "trunk_link": true,
@@ -56,9 +56,25 @@ func ParseOSM(filename string) (*Graph, error) {
 		return nil, err
 	}
 	g := NewGraph()
-	//First pass: collect node IDs referenced by routable ways.
+	updateProgress := func(p float64) {
+		if progress == nil {
+			return
+		}
+		if p < 0 {
+			p = 0
+		}
+		if p > 1 {
+			p = 1
+		}
+		percent := int(math.Round(p * 100))
+		if percent%2 == 0 {
+			progress(float64(percent) / 100.0)
+		}
+	}
+	// First pass: collect node IDs referenced by routable ways.
 	referencedNodes := make(map[int64]bool)
-	for _, way := range osmData.Ways {
+	totalWays := len(osmData.Ways)
+	for i, way := range osmData.Ways {
 		highway := ""
 		for _, tag := range way.Tags {
 			if tag.Key == "highway" {
@@ -71,9 +87,13 @@ func ParseOSM(filename string) (*Graph, error) {
 		for _, n := range way.Nodes {
 			referencedNodes[n.Ref] = true
 		}
+		if totalWays > 0 {
+			updateProgress(0.05 + 0.10*float64(i)/float64(totalWays))
+		}
 	}
-	//Add only routable nodes to the graph.
-	for _, n := range osmData.Nodes {
+	// Add only routable nodes to the graph.
+	totalNodes := len(osmData.Nodes)
+	for i, n := range osmData.Nodes {
 		if !referencedNodes[n.ID] {
 			continue
 		}
@@ -82,8 +102,19 @@ func ParseOSM(filename string) (*Graph, error) {
 			Lat: n.Lat,
 			Lon: n.Lon,
 		})
+		if totalNodes > 0 {
+			updateProgress(0.25 + 0.20*float64(i)/float64(totalNodes))
+		}
 	}
-	//Add all edges from ways.
+	// Add all edges from ways.
+	totalEdges := 0
+	for _, way := range osmData.Ways {
+		count := len(way.Nodes) - 1
+		if count > 0 {
+			totalEdges += count
+		}
+	}
+	processedEdges := 0
 	for _, way := range osmData.Ways {
 		lanes := 2
 		highway := ""
@@ -130,6 +161,7 @@ func ParseOSM(filename string) (*Graph, error) {
 			from, ok1 := g.Nodes[fromID]
 			to, ok2 := g.Nodes[toID]
 			if !ok1 || !ok2 {
+				processedEdges++
 				continue
 			}
 			dist := haversine(from.Lat, from.Lon, to.Lat, to.Lon)
@@ -139,6 +171,10 @@ func ParseOSM(filename string) (*Graph, error) {
 			}
 			if !oneway {
 				g.AddEdge(toID, Edge{To: fromID, Distance: dist, Speed: speed, Lanes: lanes, Time: time, Highway: highway})
+			}
+			processedEdges++
+			if totalEdges > 0 {
+				updateProgress(0.45 + 0.55*float64(processedEdges)/float64(totalEdges))
 			}
 		}
 	}
@@ -151,6 +187,7 @@ func ParseOSM(filename string) (*Graph, error) {
 		}
 	}
 	g.MaxSpeed = maxSpeed
+	updateProgress(1.0)
 	return g, nil
 }
 

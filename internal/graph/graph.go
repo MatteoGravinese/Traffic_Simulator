@@ -41,3 +41,12 @@ func (g *Graph) AddNode(n Node) {
 func (g *Graph) AddEdge(from int64, e Edge) {
 	g.Edges[from] = append(g.Edges[from], e)
 }
+
+//EdgeCount returns the total number of directional edges in the graph.
+func (g *Graph) EdgeCount() int {
+	count := 0
+	for _, edges := range g.Edges {
+		count += len(edges)
+	}
+	return count
+}

@@ -60,6 +60,7 @@
             font-size: 24px;
             background: linear-gradient(135deg, #60a5fa, #3b82f6);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
             letter-spacing: -0.02em;
         }
@@ -208,6 +209,15 @@
         .btn:active:not(:disabled) {
             transform: translateY(1px);
         }
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+            appearance: none;
+        }
         .btn:disabled {
             background: rgba(255, 255, 255, 0.05);
             color: var(--text-muted);
@@ -277,9 +287,12 @@
             gap: 16px;
         }
         .checklist-item {
-            display: flex;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            grid-template-rows: auto auto;
+            column-gap: 12px;
+            row-gap: 10px;
             align-items: center;
-            gap: 14px;
             opacity: 0.4;
             transition: all 0.3s ease;
         }
@@ -291,6 +304,9 @@
         .checklist-item.success {
             opacity: 1;
             color: var(--color-success);
+        }
+        .step-progress {
+            grid-column: 1 / -1;
         }
         .checklist-item.error {
             opacity: 1;
@@ -307,6 +323,42 @@
             font-size: 12px;
             font-weight: bold;
             flex-shrink: 0;
+        }
+        .step-progress {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 999px;
+            overflow: hidden;
+            position: relative;
+        }
+        .step-progress-fill {
+            width: 0;
+            height: 100%;
+            background: linear-gradient(90deg, rgba(59,130,246,0.95), rgba(59,130,246,0.6));
+            border-radius: 999px;
+            transition: width 0.35s ease;
+        }
+        .step-progress-fill.indeterminate {
+            animation: indeterminate-progress 1.7s infinite ease-in-out;
+        }
+        @keyframes indeterminate-progress {
+            0% { width: 8%; }
+            50% { width: 70%; }
+            100% { width: 20%; }
+        }
+        .network-progress-bar {
+            width: 100%;
+            height: 10px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .network-progress-fill {
+            width: 0;
+            height: 100%;
+            background: linear-gradient(90deg, rgba(59,130,246,0.95), rgba(59,130,246,0.6));
+            transition: width 0.35s ease;
         }
         .checklist-item.active .step-icon {
             border-color: var(--color-primary);
@@ -482,7 +534,7 @@
                         </li>
                         <li>
                             <span class="step-num">4</span>
-                            <span>Click <strong>Confirm & Run</strong> to generate the simulation network!</span>
+                            <span>Click <strong>Confirm & Load Network</strong> to build the road graph before spawning vehicles.</span>
                         </li>
                     </ul>
                 </div>
@@ -500,19 +552,53 @@
                     </div>
                 </div>
                 <button id="btn-confirm" class="btn" disabled style="margin-top: 16px;">
-                    Confirm & Run Simulation
+                    Confirm & Load Network
                 </button>
+                <div style="margin: 20px 0; border-top: 1px dashed rgba(255,255,255,0.1); position: relative; text-align: center;">
+                    <span style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #111522; padding: 0 10px; font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">OR</span>
+                </div>
+                <div class="glass-panel" style="background: rgba(255, 255, 255, 0.02); padding: 16px;">
+                    <h3 style="font-size: 14px; color: var(--text-primary); margin-bottom: 6px;">Option B: Upload OSM File</h3>
+                    <p style="font-size: 11px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.4;">
+                        Select a raw OpenStreetMap <code>.osm</code> XML file to parse and simulate (any size supported).
+                    </p>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <input type="file" id="file-upload-input" accept=".osm" style="display: none;" />
+                        <button id="btn-select-file" class="btn btn-outline" style="font-size: 13px; padding: 10px 14px;">Select File</button>
+                        <div id="file-info" style="font-size: 11px; color: var(--text-muted); text-align: center; word-break: break-all; display: none;"></div>
+                        <button id="btn-upload-file" class="btn" disabled style="font-size: 13px; padding: 10px 14px; background: linear-gradient(135deg, #3b82f6, #2563eb);">Upload & Run</button>
+                    </div>
+                </div>
             </div>
             <div id="hud-container" class="glass-panel">
                 <div class="hud-header">Active Network HUD</div>
                 <div class="stat-grid">
-                    <div class="stat-item">
-                        <span class="stat-lbl">Active Congested Edges</span>
-                        <span class="stat-val" id="stat-edges">—</span>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <div style="width:40px;display:flex;flex-direction:column;justify-content:space-between;height:64px;font-size:11px;color:var(--text-muted);">
+                            <span style="text-align:right;">100%</span>
+                            <span style="text-align:right;">50%</span>
+                            <span style="text-align:right;">0%</span>
+                        </div>
+                        <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+                            <div style="font-size:13px;color:var(--text-secondary);font-weight:600;">Congestion Distribution</div>
+                            <canvas id="congestion-distribution" width="320" height="80" style="width:100%;height:64px;border-radius:8px;background:rgba(255,255,255,0.02);"></canvas>
+                            <div style="font-size:11px;color:var(--text-muted);display:flex;justify-content:space-between;padding:0 2px;">
+                                <span>0</span>
+                                <span>0.5</span>
+                                <span>1</span>
+                            </div>
+                            <div id="congestion-stats" style="font-size:11px;color:var(--text-muted);margin-top:4px;">Edges: — · Vehicles: —</div>
+                        </div>
                     </div>
-                    <div class="stat-item">
-                        <span class="stat-lbl">Last Update Time</span>
-                        <span class="stat-val" id="stat-time">—</span>
+                </div>
+                <div class="glass-panel" style="margin-top: 18px; padding: 16px; background: rgba(255,255,255,0.04);">
+                    <div style="display:flex;flex-direction:column;gap:12px;">
+                        <div>
+                            <div style="font-size:13px;color:var(--text-secondary);font-weight:600;">Vehicle count</div>
+                            <div style="font-size:11px;color:var(--text-muted);">Enter the exact number of vehicles to spawn after the network is loaded.</div>
+                        </div>
+                        <input id="hud-vehicle-count" type="number" min="1" step="1" value="50" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:var(--text-primary);font-size:13px;outline:none;" />
+                        <button id="btn-apply-vehicles" class="btn btn-outline" style="white-space:nowrap;">Spawn Vehicles</button>
                     </div>
                 </div>
                 <div class="legend">
@@ -522,6 +608,10 @@
                         <span>Free Flow</span>
                         <span>Heavy Jam</span>
                     </div>
+                </div>
+                <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-size:13px; color:var(--text-secondary); font-weight:500;">Last Update</div>
+                    <div class="stat-val" id="stat-time">—</div>
                 </div>
                 <div class="toggle-container" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color);">
                     <span style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Traffic-Aware Routing</span>
@@ -537,29 +627,57 @@
         </div>
     </div>
     <div id="loading-overlay" class="overlay" style="display: none;">
-        <div class="loading-card">
-            <h2>Generating Road Network</h2>
-            <p class="loading-subtitle">Configuring contraction hierarchies & agents. Please wait...</p>
+        <div id="network-loading-card" class="loading-card" style="display: none;">
+            <h2>Loading Network</h2>
+            <p class="loading-subtitle">Downloading map data and preparing the road network.</p>
+            <div class="network-progress" style="margin-top: 24px;">
+                <div class="network-progress-bar">
+                    <div id="network-progress-fill" class="network-progress-fill"></div>
+                </div>
+                <div id="network-progress-text" style="font-size:12px;color:var(--text-secondary);margin-top:12px;">Waiting for network load...</div>
+            </div>
+            <div id="network-error-message" class="error-box" style="display: none; margin-top: 16px;"></div>
+            <button id="btn-close-network-error" class="btn" style="display: none; margin-top: 20px;">Back to Map Selection</button>
+        </div>
+        <div id="simulation-settings-card" class="loading-card" style="display: none;">
+            <h2>Spawn Vehicles</h2>
+            <p class="loading-subtitle">Enter the exact number of vehicles to add after the network is loaded.</p>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+                <div style="font-size:13px;color:var(--text-secondary);font-weight:500;">Vehicle count</div>
+                <input id="vehicle-count" type="number" min="1" step="1" value="50" style="width:100%;margin-top:6px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:var(--text-primary);font-size:13px;outline:none;" />
+                <span id="vehicle-count-help" style="font-size:11px;color:var(--text-muted);">Default 50 vehicles. Enter a whole number.</span>
+            </div>
+            <button id="btn-start-simulation" class="btn" style="margin-top:16px;">Spawn Vehicles</button>
+            <button id="btn-cancel-settings" class="btn btn-outline" style="margin-top:8px;">Cancel</button>
+        </div>
+        <div id="loading-card" class="loading-card" style="display:none;">
+            <h2 id="loading-card-title">Generating Road Network</h2>
+            <p id="loading-card-subtitle" class="loading-subtitle">Configuring contraction hierarchies & agents. Please wait...</p>
             <div class="checklist">
                 <div class="checklist-item" id="step-downloading">
                     <span class="step-icon">○</span>
                     <span class="step-label">Download OpenStreetMap data</span>
+                    <div class="step-progress"><div class="step-progress-fill" data-step="downloading"></div></div>
                 </div>
                 <div class="checklist-item" id="step-parsing">
                     <span class="step-icon">○</span>
                     <span class="step-label">Parse XML & build network graph</span>
+                    <div class="step-progress"><div class="step-progress-fill" data-step="parsing"></div></div>
                 </div>
                 <div class="checklist-item" id="step-preprocessing_ch">
                     <span class="step-icon">○</span>
                     <span class="step-label">Preprocess Contraction Hierarchies</span>
+                    <div class="step-progress"><div class="step-progress-fill" data-step="preprocessing_ch"></div></div>
                 </div>
                 <div class="checklist-item" id="step-preprocessing_cch">
                     <span class="step-icon">○</span>
                     <span class="step-label">Preprocess Customizable CH</span>
+                    <div class="step-progress"><div class="step-progress-fill" data-step="preprocessing_cch"></div></div>
                 </div>
                 <div class="checklist-item" id="step-initializing">
                     <span class="step-icon">○</span>
-                    <span class="step-label">Spawn vehicles & start simulation</span>
+                    <span class="step-label">Initialize simulation state</span>
+                    <div class="step-progress"><div class="step-progress-fill" data-step="initializing"></div></div>
                 </div>
             </div>
             <div id="error-message" class="error-box" style="display: none;"></div>
@@ -588,6 +706,9 @@
         let bboxRect = null;
         const btnDraw = document.getElementById('btn-draw');
         const btnConfirm = document.getElementById('btn-confirm');
+        const btnStartSimulation = document.getElementById('btn-start-simulation');
+        const btnCancelSettings = document.getElementById('btn-cancel-settings');
+        const vehicleCountInput = document.getElementById('vehicle-count');
         const bboxCoordsDiv = document.getElementById('bbox-coords');
         const swCoordSpan = document.getElementById('sw-coord');
         const neCoordSpan = document.getElementById('ne-coord');
@@ -668,17 +789,33 @@
         let simulationStarted = false;
         let roadsInterval = null;
         let congestionInterval = null;
-        btnConfirm.addEventListener('click', () => {
-            if (!bboxRect) return;
-            const bounds = bboxRect.getBounds();
-            const minLat = bounds.getSouth().toFixed(5);
-            const minLon = bounds.getWest().toFixed(5);
-            const maxLat = bounds.getNorth().toFixed(5);
-            const maxLon = bounds.getEast().toFixed(5);
-            // Display overlay.
-            document.getElementById('loading-overlay').style.display = 'flex';
+        let selectedVehicleCount = 0;
+        let selectedBounds = null;
+        const simulationSettingsCard = document.getElementById('simulation-settings-card');
+        const loadingCard = document.getElementById('loading-card');
+        const networkLoadingCard = document.getElementById('network-loading-card');
+        const networkProgressText = document.getElementById('network-progress-text');
+        const networkErrorMessage = document.getElementById('network-error-message');
+        const btnCloseNetworkError = document.getElementById('btn-close-network-error');
+        const stepInitializing = document.getElementById('step-initializing');
+        const hudVehicleCountInput = document.getElementById('hud-vehicle-count');
+        const btnApplyVehicles = document.getElementById('btn-apply-vehicles');
+        function loadNetwork(queryUrl, fallbackBounds) {
+            selectedVehicleCount = 0;
+            document.getElementById('loading-card-title').textContent = "Generating Road Network";
+            document.getElementById('loading-card-subtitle').textContent = "Configuring contraction hierarchies & agents. Please wait...";
+            document.getElementById('step-downloading').style.display = '';
+            document.getElementById('step-parsing').style.display = '';
+            document.getElementById('step-preprocessing_ch').style.display = '';
+            document.getElementById('step-preprocessing_cch').style.display = '';
+            stepInitializing.style.display = 'none';
+            networkLoadingCard.style.display = 'none';
+            loadingCard.style.display = 'block';
+            simulationSettingsCard.style.display = 'none';
             resetChecklist();
-            const eventSource = new EventSource(`/api/load-area?minLat=${minLat}&minLon=${minLon}&maxLat=${maxLat}&maxLon=${maxLon}`);
+            document.getElementById('loading-overlay').style.display = 'flex';
+
+            const eventSource = new EventSource(queryUrl);
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
                 console.log("SSE Message:", data);
@@ -687,24 +824,238 @@
                     showChecklistError(data.message);
                     return;
                 }
-                updateChecklist(data.status, data.message);
+                updateChecklist(data.status, data.message, data.progress);
                 if (data.status === 'done') {
                     eventSource.close();
+                    
+                    if (data.minLat !== undefined && data.minLon !== undefined && data.maxLat !== undefined && data.maxLon !== undefined) {
+                        selectedBounds = L.latLngBounds([data.minLat, data.minLon], [data.maxLat, data.maxLon]);
+                    } else if (fallbackBounds) {
+                        selectedBounds = fallbackBounds;
+                    }
+
                     setTimeout(() => {
-                        // Switch Views.
                         document.getElementById('loading-overlay').style.display = 'none';
+                        loadingCard.style.display = 'none';
                         document.getElementById('landing-ui').style.display = 'none';
                         document.getElementById('hud-container').style.display = 'flex';
                         document.getElementById('status-light').classList.add('active');
-                        document.getElementById('status-text').textContent = "Simulation Running";
-                        // Fit Map bounds to selected area.
-                        map.fitBounds(bounds);
-                        // Clear previous selection.
+                        document.getElementById('status-text').textContent = "Network Ready";
+                        if (selectedBounds) {
+                            map.fitBounds(selectedBounds);
+                        }
                         if (bboxRect) {
                             map.removeLayer(bboxRect);
                             bboxRect = null;
                         }
-                        // Start Polling loops.
+                        simulationStarted = true;
+                        refresh();
+                        roadsInterval = setInterval(refresh, 1000);
+                        congestionInterval = setInterval(refresh, 500);
+                    }, 800);
+                }
+            };
+            eventSource.onerror = function(err) {
+                console.error("SSE Connection Error:", err);
+                eventSource.close();
+                showChecklistError("Connection to backend server lost or timed out. Please verify the console and try again.");
+            };
+        }
+
+        btnConfirm.addEventListener('click', () => {
+            if (!bboxRect) return;
+            const bounds = bboxRect.getBounds();
+            const minLat = bounds.getSouth().toFixed(5);
+            const minLon = bounds.getWest().toFixed(5);
+            const maxLat = bounds.getNorth().toFixed(5);
+            const maxLon = bounds.getEast().toFixed(5);
+            loadNetwork(`/api/load-area?minLat=${minLat}&minLon=${minLon}&maxLat=${maxLat}&maxLon=${maxLon}`, bounds);
+        });
+
+        // Option B: File Upload Logic
+        const fileUploadInput = document.getElementById('file-upload-input');
+        const btnSelectFile = document.getElementById('btn-select-file');
+        const btnUploadFile = document.getElementById('btn-upload-file');
+        const fileInfo = document.getElementById('file-info');
+
+        btnSelectFile.addEventListener('click', () => {
+            fileUploadInput.click();
+        });
+
+        fileUploadInput.addEventListener('change', () => {
+            const file = fileUploadInput.files[0];
+            if (!file) {
+                fileInfo.style.display = 'none';
+                btnUploadFile.disabled = true;
+                return;
+            }
+
+            if (!file.name.endsWith('.osm')) {
+                alert("Please select a valid OpenStreetMap XML file with a '.osm' extension.");
+                fileUploadInput.value = '';
+                fileInfo.style.display = 'none';
+                btnUploadFile.disabled = true;
+                return;
+            }
+
+            let sizeStr = "";
+            if (file.size < 1024 * 1024) {
+                sizeStr = (file.size / 1024).toFixed(1) + " KB";
+            } else {
+                sizeStr = (file.size / (1024 * 1024)).toFixed(1) + " MB";
+            }
+
+            fileInfo.textContent = `${file.name} (${sizeStr})`;
+            fileInfo.style.display = 'block';
+            btnUploadFile.disabled = false;
+        });
+
+        btnUploadFile.addEventListener('click', () => {
+            const file = fileUploadInput.files[0];
+            if (!file) return;
+
+            btnSelectFile.disabled = true;
+            btnUploadFile.disabled = true;
+            btnUploadFile.textContent = "Uploading...";
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/api/upload-osm', {
+                method: 'POST',
+                body: formData
+            })
+            .then(resp => {
+                if (!resp.ok) {
+                    throw new Error(`Upload failed (HTTP ${resp.status})`);
+                }
+                return resp.json();
+            })
+            .then(data => {
+                btnSelectFile.disabled = false;
+                btnUploadFile.textContent = "Upload & Run";
+                fileUploadInput.value = '';
+                fileInfo.style.display = 'none';
+                btnUploadFile.disabled = true;
+
+                loadNetwork(`/api/load-area?file=${encodeURIComponent(data.temp_file)}`, null);
+            })
+            .catch(err => {
+                console.error("Upload error:", err);
+                alert(`Error uploading file: ${err.message}. Please check that the file size isn't too large or server is active.`);
+                btnSelectFile.disabled = false;
+                btnUploadFile.disabled = false;
+                btnUploadFile.textContent = "Upload & Run";
+            });
+        });
+        btnCancelSettings.addEventListener('click', () => {
+            document.getElementById('loading-overlay').style.display = 'none';
+            simulationSettingsCard.style.display = 'none';
+        });
+        btnStartSimulation.addEventListener('click', () => {
+            if (!selectedBounds) return;
+            const bounds = selectedBounds;
+            const minLat = bounds.getSouth().toFixed(5);
+            const minLon = bounds.getWest().toFixed(5);
+            const maxLat = bounds.getNorth().toFixed(5);
+            const maxLon = bounds.getEast().toFixed(5);
+            let vehicleCount = parseInt(vehicleCountInput.value, 10);
+            if (Number.isNaN(vehicleCount) || vehicleCount <= 0) {
+                vehicleCount = 50;
+                vehicleCountInput.value = '50';
+            }
+            selectedVehicleCount = vehicleCount;
+            if (vehicleCount > 5000) {
+                const proceed = window.confirm('Spawning more than 5,000 vehicles may take a long time. Do you want to continue?');
+                if (!proceed) {
+                    return;
+                }
+            }
+            document.getElementById('loading-card-title').textContent = "Spawning Vehicles";
+            document.getElementById('loading-card-subtitle').textContent = "Adding agents to the simulation network...";
+            document.getElementById('step-downloading').style.display = 'none';
+            document.getElementById('step-parsing').style.display = 'none';
+            document.getElementById('step-preprocessing_ch').style.display = 'none';
+            document.getElementById('step-preprocessing_cch').style.display = 'none';
+            stepInitializing.style.display = '';
+            document.getElementById('network-loading-card').style.display = 'none';
+            simulationSettingsCard.style.display = 'none';
+            loadingCard.style.display = 'block';
+            resetChecklist();
+            const eventSource = new EventSource(`/api/spawn-vehicles?vehicleCount=${encodeURIComponent(vehicleCount)}`);
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                console.log("SSE Message:", data);
+                if (data.status === 'error') {
+                    eventSource.close();
+                    showChecklistError(data.message);
+                    return;
+                }
+                updateChecklist(data.status, data.message, data.progress);
+                if (data.status === 'done') {
+                    eventSource.close();
+                    setTimeout(() => {
+                        document.getElementById('loading-overlay').style.display = 'none';
+                        document.getElementById('status-light').classList.add('active');
+                        document.getElementById('status-text').textContent = "Simulation Running";
+                        simulationStarted = true;
+                        refresh();
+                        roadsInterval = setInterval(refresh, 1000);
+                        congestionInterval = setInterval(refresh, 500);
+                    }, 800);
+                }
+            };
+            eventSource.onerror = function(err) {
+                console.error("SSE Connection Error:", err);
+                eventSource.close();
+                showChecklistError("Connection to backend server lost or timed out. Please verify the console and try again.");
+            };
+        });
+        btnApplyVehicles.addEventListener('click', () => {
+            if (!selectedBounds) return;
+            const bounds = selectedBounds;
+            let vehicleCount = parseInt(hudVehicleCountInput.value, 10);
+            if (Number.isNaN(vehicleCount) || vehicleCount <= 0) {
+                vehicleCount = 50;
+                hudVehicleCountInput.value = '50';
+            }
+            selectedVehicleCount = vehicleCount;
+            if (vehicleCount > 5000) {
+                const proceed = window.confirm('Spawning more than 5,000 vehicles may take a long time. Do you want to continue?');
+                if (!proceed) {
+                    return;
+                }
+            }
+            document.getElementById('loading-card-title').textContent = "Spawning Vehicles";
+            document.getElementById('loading-card-subtitle').textContent = "Adding agents to the simulation network...";
+            document.getElementById('step-downloading').style.display = 'none';
+            document.getElementById('step-parsing').style.display = 'none';
+            document.getElementById('step-preprocessing_ch').style.display = 'none';
+            document.getElementById('step-preprocessing_cch').style.display = 'none';
+            stepInitializing.style.display = '';
+            document.getElementById('network-loading-card').style.display = 'none';
+            clearInterval(roadsInterval);
+            clearInterval(congestionInterval);
+            simulationStarted = false;
+            document.getElementById('loading-overlay').style.display = 'flex';
+            loadingCard.style.display = 'block';
+            resetChecklist();
+            const eventSource = new EventSource(`/api/spawn-vehicles?vehicleCount=${encodeURIComponent(vehicleCount)}`);
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                console.log("SSE Message:", data);
+                if (data.status === 'error') {
+                    eventSource.close();
+                    showChecklistError(data.message);
+                    return;
+                }
+                updateChecklist(data.status, data.message, data.progress);
+                if (data.status === 'done') {
+                    eventSource.close();
+                    setTimeout(() => {
+                        document.getElementById('loading-overlay').style.display = 'none';
+                        document.getElementById('status-light').classList.add('active');
+                        document.getElementById('status-text').textContent = "Simulation Running";
                         simulationStarted = true;
                         refresh();
                         roadsInterval = setInterval(refresh, 1000);
@@ -723,17 +1074,48 @@
                 const item = document.getElementById(`step-${s}`);
                 item.className = 'checklist-item';
                 item.querySelector('.step-icon').textContent = '○';
+                const fill = item.querySelector('.step-progress-fill');
+                if (fill) {
+                    fill.style.width = '0%';
+                    fill.classList.remove('indeterminate');
+                }
             });
             document.getElementById('error-message').style.display = 'none';
             document.getElementById('btn-close-error').style.display = 'none';
         }
-        function updateChecklist(status, message) {
+        function setStepProgress(step, percent, indeterminate = false) {
+            const fill = document.querySelector(`.step-progress-fill[data-step="${step}"]`);
+            if (!fill) return;
+            fill.classList.toggle('indeterminate', indeterminate);
+            if (!indeterminate) {
+                fill.style.width = `${Math.min(Math.max(percent, 0), 100)}%`;
+            }
+        }
+        function completeStep(step) {
+            const item = document.getElementById(`step-${step}`);
+            if (!item) return;
+            item.className = 'checklist-item success';
+            item.querySelector('.step-icon').textContent = '✓';
+            setStepProgress(step, 100, false);
+        }
+        function updateChecklist(status, message, progress) {
             const activeIdx = stepsList.indexOf(status);
             // Mark previous steps as complete.
             for (let i = 0; i < activeIdx; i++) {
-                const item = document.getElementById(`step-${stepsList[i]}`);
-                item.className = 'checklist-item success';
-                item.querySelector('.step-icon').textContent = '✓';
+                completeStep(stepsList[i]);
+            }
+            // Reset later steps.
+            for (let i = activeIdx + 1; i < stepsList.length; i++) {
+                const inactiveItem = document.getElementById(`step-${stepsList[i]}`);
+                if (inactiveItem) {
+                    inactiveItem.className = 'checklist-item';
+                    inactiveItem.querySelector('.step-icon').textContent = '○';
+                    const fill = inactiveItem.querySelector('.step-progress-fill');
+                    if (fill) {
+                        fill.style.width = '0%';
+                        fill.classList.remove('indeterminate');
+                    }
+                }
             }
             // Mark active step.
             if (activeIdx !== -1) {
@@ -742,6 +1124,11 @@
                 item.querySelector('.step-icon').textContent = '▶';
                 if (message) {
                     item.querySelector('.step-label').textContent = message;
+                }
+                if (typeof progress === 'number') {
+                    setStepProgress(status, progress * 100, false);
+                } else {
+                    setStepProgress(status, 20, true);
                 }
             }
         }
@@ -757,8 +1144,20 @@
             }
             document.getElementById('btn-close-error').style.display = 'block';
         }
+        function showNetworkError(msg) {
+            networkErrorMessage.textContent = msg;
+            networkErrorMessage.style.display = 'block';
+            btnCloseNetworkError.style.display = 'block';
+            networkProgressText.textContent = 'Network load failed.';
+            document.getElementById('network-progress-fill').style.width = '0%';
+        }
         document.getElementById('btn-close-error').addEventListener('click', () => {
             document.getElementById('loading-overlay').style.display = 'none';
+            resetSelection();
+        });
+        btnCloseNetworkError.addEventListener('click', () => {
+            document.getElementById('loading-overlay').style.display = 'none';
+            networkLoadingCard.style.display = 'none';
             resetSelection();
         });
         // Active Simulation Polling & Render Engine (from previous optimizations).
@@ -779,12 +1178,94 @@
             const hue = (1 - t) * 120;
             return `hsl(${hue},90%,45%)`;
         }
+        // Render a small line chart showing distribution of roads by congestion level.
+        function drawDistribution(allRoads, congestionArray) {
+            const canvas = document.getElementById('congestion-distribution');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            // use CSS size for layout, set backing store size for crisp rendering
+            const cssW = canvas.clientWidth || 320;
+            const cssH = canvas.clientHeight || 64;
+            if (canvas._dpr !== dpr || canvas._cssW !== cssW || canvas._cssH !== cssH) {
+                canvas._dpr = dpr;
+                canvas._cssW = cssW;
+                canvas._cssH = cssH;
+                canvas.width = Math.floor(cssW * dpr);
+                canvas.height = Math.floor(cssH * dpr);
+                canvas.style.width = cssW + 'px';
+                canvas.style.height = cssH + 'px';
+            }
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // bins
+            const bins = 21;
+            const counts = new Array(bins).fill(0);
+            const congestionMap = new Map();
+            const toKey = (lat, lon) => Number(lat).toFixed(5) + "," + Number(lon).toFixed(5);
+            congestionArray.forEach(e => {
+                const key = `${toKey(e.from_lat, e.from_lon)}|${toKey(e.to_lat, e.to_lon)}`;
+                congestionMap.set(key, Math.min(Math.max(Number(e.congestion) || 0, 0), 1));
+            });
+            const totalEdges = Array.isArray(allRoads) ? allRoads.length : 0;
+            allRoads.forEach(road => {
+                const key = `${toKey(road[0], road[1])}|${toKey(road[2], road[3])}`;
+                const v = congestionMap.get(key) || 0;
+                const idx = Math.round(v * (bins - 1));
+                counts[idx]++;
+            });
+            const edges = Math.max(totalEdges, counts.reduce((a, b) => a + b, 0));
+            try {
+                const summaryEl = document.getElementById('congestion-stats');
+                if (summaryEl) {
+                    summaryEl.textContent = `Edges: ${edges} · Vehicles: ${selectedVehicleCount}`;
+                }
+            } catch (e) {
+                // ignore
+            }
+            // draw filled area and line
+            ctx.save();
+            ctx.scale(canvas._dpr, canvas._dpr);
+            const cw = cssW; const ch = cssH;
+            ctx.beginPath();
+            for (let i = 0; i < bins; i++) {
+                const x = (i / (bins - 1)) * cw;
+                const y = ch - (counts[i] / edges) * (ch - 16) - 8;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(59,130,246,0.95)';
+            ctx.stroke();
+            // fill
+            ctx.lineTo(cw, ch);
+            ctx.lineTo(0, ch);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(59,130,246,0.12)';
+            ctx.fill();
+            // x baseline
+            ctx.beginPath();
+            ctx.moveTo(0, ch - 2);
+            ctx.lineTo(cw, ch - 2);
+            ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            // draw a faint left axis line — labels are rendered in DOM to the left
+            ctx.beginPath();
+            ctx.moveTo(4, 4);
+            ctx.lineTo(4, ch - 4);
+            ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.restore();
+        }
         function refresh() {
             if (!simulationStarted) return;
+            // fetch displayed roads + displayed congestion + global congestion
             Promise.all([
                 fetch(`/roads?${getBBoxParams()}`).then(r => r.json()),
-                fetch(`/congestion?${getBBoxParams()}`).then(r => r.json())
-            ]).then(([roads, congestionEMA]) => {
+                fetch(`/congestion?${getBBoxParams()}`).then(r => r.json()),
+                fetch(`/congestion?minLat=-90&minLon=-180&maxLat=90&maxLon=180`).then(r => r.json()),
+                fetch(`/roads?minLat=-90&minLon=-180&maxLat=90&maxLon=180&zoom=20`).then(r => r.json())
+            ]).then(([roads, congestionEMA, allCongestion, allRoads]) => {
                 const toKey = (lat, lon) => Number(lat).toFixed(5) + "," + Number(lon).toFixed(5);
                 targetCongestionMap.clear();
                 congestionEMA.forEach(e => {
@@ -795,7 +1276,7 @@
                     }
                 });
                 cachedRoads = roads;
-                document.getElementById('stat-edges').textContent = congestionEMA.filter(e => e.congestion > 0).length;
+                drawDistribution(allRoads, allCongestion);
                 document.getElementById('stat-time').textContent = new Date().toLocaleTimeString();
             }).catch(err => console.error("Traffic update failed:", err));
         }

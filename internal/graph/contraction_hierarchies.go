@@ -230,13 +230,13 @@ func calculateEdgeDifference(ch *CHGraph, nodeID int64, hopLimit int) int {
 }
 
 // Preprocess builds the CH by contracting all nodes using lazy priority queue updates.
-func Preprocess(g *Graph) *CHGraph {
+func Preprocess(g *Graph, progress func(float64)) *CHGraph {
 	ch := NewCHGraph(g)
 	hopLimit := 5
 	numNodes := len(ch.Nodes)
 	pq := &PriorityQueue{}
 	heap.Init(pq)
-	//Compute initial importance.
+	// Compute initial importance.
 	for id := range ch.Nodes {
 		edgeDiff := calculateEdgeDifference(ch, id, hopLimit)
 		heap.Push(pq, &Item{nodeID: id, time: float64(edgeDiff)})
@@ -245,9 +245,9 @@ func Preprocess(g *Graph) *CHGraph {
 	for pq.Len() > 0 {
 		item := heap.Pop(pq).(*Item)
 		nodeID := item.nodeID
-		//Recompute the edge difference.
+		// Recompute the edge difference.
 		currentEdgeDiff := calculateEdgeDifference(ch, nodeID, hopLimit)
-		//If it's no longer the minimum, push it back and continue.
+		// If it's no longer the minimum, push it back and continue.
 		if pq.Len() > 0 && float64(currentEdgeDiff) > (*pq)[0].time {
 			item.time = float64(currentEdgeDiff)
 			heap.Push(pq, item)
@@ -255,6 +255,9 @@ func Preprocess(g *Graph) *CHGraph {
 		}
 		contractNode(ch, nodeID, rank, hopLimit)
 		rank++
+		if progress != nil && numNodes > 0 {
+			progress(float64(rank) / float64(numNodes))
+		}
 	}
 	fmt.Printf("\nCH preprocessing complete. %d nodes contracted.\n", numNodes)
 	return ch

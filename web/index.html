@@ -29,6 +29,7 @@
             --color-warning: #f59e0b;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
             background: var(--bg-main);
             color: var(--text-primary);
@@ -218,7 +219,111 @@
             -moz-appearance: textfield;
             appearance: none;
         }
-        .btn:disabled {
+        .form-select {
+            width: 100%;
+            padding: 11px 14px 11px 14px;
+            padding-right: 36px;
+            border-radius: 12px;
+            border: 1.5px solid rgba(59, 130, 246, 0.3);
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(59, 130, 246, 0.04));
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 500;
+            outline: none;
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2394a3b8' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+        }
+        .form-select:hover {
+            border-color: rgba(59, 130, 246, 0.6);
+            background-color: rgba(59, 130, 246, 0.12);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        }
+        .form-select:focus {
+            border-color: rgba(59, 130, 246, 0.95);
+            background-color: rgba(59, 130, 246, 0.16);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1), 0 4px 12px rgba(59, 130, 246, 0.25);
+        }
+        .form-select option {
+            background: #131724;
+            color: var(--text-primary);
+            padding: 8px 12px;
+            font-weight: 500;
+        }
+        /* Custom select component */
+        .custom-select { position: relative; display: inline-block; width: 100%; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; background: rgba(255, 255, 255, 0.03); transition: border-color 0.15s ease; }
+        .custom-select.open { border-radius: 8px; }
+        .custom-select:hover {
+            border-color: rgba(255, 255, 255, 0.18);
+        }
+        .custom-select .cs-trigger {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: transparent;
+            border: none;
+            padding: 9px 11px;
+            border-radius: 8px;
+            text-align: left;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+        .custom-select .cs-trigger:focus { outline: none; }
+        .custom-select .cs-options {
+            position: static;
+            padding: 4px;
+            list-style: none;
+            margin: 0;
+            display: none;
+        }
+        .custom-select.open .cs-options {
+            display: block;
+        }
+        .cs-option {
+            padding: 8px 10px;
+            border-radius: 5px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: background 0.1s ease, color 0.1s ease;
+            font-family: 'Inter', sans-serif;
+            font-size: 12.5px;
+            font-weight: 400;
+            letter-spacing: 0.01em;
+            margin: 1px 0;
+        }
+        .cs-option:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+        }
+        .cs-option[aria-selected="true"] {
+            color: var(--text-primary);
+            background: rgba(59, 130, 246, 0.1);
+        }
+        .cs-option[aria-selected="true"]::before {
+            content: "✓ ";
+            font-size: 11px;
+            color: var(--color-primary);
+            opacity: 0.8;
+        }
+        .cs-chevron {
+            width: 10px;
+            height: 10px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='none' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: center;
+            transition: transform 0.15s ease;
+            flex-shrink: 0;
+        }
+        .custom-select.open .cs-chevron { transform: rotate(180deg); }        .btn:disabled {
             background: rgba(255, 255, 255, 0.05);
             color: var(--text-muted);
             cursor: not-allowed;
@@ -566,39 +671,30 @@
                         <input type="file" id="file-upload-input" accept=".osm" style="display: none;" />
                         <button id="btn-select-file" class="btn btn-outline" style="font-size: 13px; padding: 10px 14px;">Select File</button>
                         <div id="file-info" style="font-size: 11px; color: var(--text-muted); text-align: center; word-break: break-all; display: none;"></div>
-                        <button id="btn-upload-file" class="btn" disabled style="font-size: 13px; padding: 10px 14px; background: linear-gradient(135deg, #3b82f6, #2563eb);">Upload & Run</button>
+                        <button id="btn-upload-file" class="btn" disabled style="font-size: 13px; padding: 10px 14px;">Upload & Run</button>
                     </div>
                 </div>
             </div>
-            <div id="hud-container" class="glass-panel">
+            <div id="hud-container" class="glass-panel" style="margin:auto;">
                 <div class="hud-header">Active Network HUD</div>
-                <div class="stat-grid">
-                    <div style="display:flex;gap:10px;align-items:center;">
-                        <div style="width:40px;display:flex;flex-direction:column;justify-content:space-between;height:64px;font-size:11px;color:var(--text-muted);">
-                            <span style="text-align:right;">100%</span>
-                            <span style="text-align:right;">50%</span>
-                            <span style="text-align:right;">0%</span>
-                        </div>
-                        <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
-                            <div style="font-size:13px;color:var(--text-secondary);font-weight:600;">Congestion Distribution</div>
-                            <canvas id="congestion-distribution" width="320" height="80" style="width:100%;height:64px;border-radius:8px;background:rgba(255,255,255,0.02);"></canvas>
-                            <div style="font-size:11px;color:var(--text-muted);display:flex;justify-content:space-between;padding:0 2px;">
-                                <span>0</span>
-                                <span>0.5</span>
-                                <span>1</span>
+                <div class="stat-grid" style="justify-content:center;">
+                    <div style="display:flex;gap:10px;align-items:center;max-width:360px;margin:0 auto;">
+                        <div style="flex:1;display:flex;flex-direction:column;gap:6px;min-width:0;">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                                <div style="font-size:13px;color:var(--text-secondary);font-weight:600;">Congestion Distribution</div>
                             </div>
-                            <div id="congestion-stats" style="font-size:11px;color:var(--text-muted);margin-top:4px;">Edges: — · Vehicles: —</div>
+                            <div id="distribution-filter-select" class="custom-select" style="min-width:0;">
+                                <button type="button" class="cs-trigger">
+                                    <span class="cs-label">All roads</span>
+                                    <span class="cs-chevron"></span>
+                                </button>
+                                <ul class="cs-options" role="listbox" aria-hidden="true">
+                                    <li class="cs-option" data-value="all" role="option" aria-selected="true">All roads</li>
+                                    <li class="cs-option" data-value="major" role="option">Major roads</li>
+                                </ul>
+                            </div>
+                            <canvas id="congestion-distribution" width="320" height="80" style="width:100%;max-width:280px;height:64px;border-radius:8px;background:rgba(255,255,255,0.02);"></canvas>
                         </div>
-                    </div>
-                </div>
-                <div class="glass-panel" style="margin-top: 18px; padding: 16px; background: rgba(255,255,255,0.04);">
-                    <div style="display:flex;flex-direction:column;gap:12px;">
-                        <div>
-                            <div style="font-size:13px;color:var(--text-secondary);font-weight:600;">Vehicle count</div>
-                            <div style="font-size:11px;color:var(--text-muted);">Enter the exact number of vehicles to spawn after the network is loaded.</div>
-                        </div>
-                        <input id="hud-vehicle-count" type="number" min="1" step="1" value="50" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:var(--text-primary);font-size:13px;outline:none;" />
-                        <button id="btn-apply-vehicles" class="btn btn-outline" style="white-space:nowrap;">Spawn Vehicles</button>
                     </div>
                 </div>
                 <div class="legend">
@@ -609,8 +705,22 @@
                         <span>Heavy Jam</span>
                     </div>
                 </div>
+                <div class="glass-panel" style="margin-top: 18px; padding: 16px; background: rgba(255,255,255,0.04);">
+                    <div style="display:flex;flex-direction:column;gap:12px;">
+                        <div>
+                            <div style="font-size:13px;color:var(--text-secondary);font-weight:600;">Vehicle count</div>
+                            <div style="font-size:11px;color:var(--text-muted);">Enter the number of vehicles to spawn after the network is loaded.</div>
+                        </div>
+                        <input id="hud-vehicle-count" type="number" min="1" step="1" value="50" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:var(--text-primary);font-size:13px;outline:none;" />
+                        <button id="btn-apply-vehicles" class="btn btn-outline" style="white-space:nowrap;">Spawn Vehicles</button>
+                    </div>
+                </div>
                 <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
-                    <div style="font-size:13px; color:var(--text-secondary); font-weight:500;">Last Update</div>
+                    <div style="font-size:13px; color:var(--text-secondary); font-weight:500;">Edge Count:</div>
+                    <div class="stat-val" id="congestion-stats">—</div>
+                </div>
+                <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-size:13px; color:var(--text-secondary); font-weight:500;">Last Update:</div>
                     <div class="stat-val" id="stat-time">—</div>
                 </div>
                 <div class="toggle-container" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color);">
@@ -686,18 +796,24 @@
             </button>
         </div>
     </div>
+    <div id="debug-panel" style="position: absolute; left: 12px; bottom: 12px; z-index:1200; background: rgba(0,0,0,0.6); color: #dbeafe; padding: 8px 10px; border-radius: 8px; font-size: 12px; font-family: monospace; display: none;">
+        <div id="dbg-text">debug:</div>
+    </div>
     <script>
         const map = L.map('map', {
             zoomControl: false,
             zoomSnap: 1,    
             zoomDelta: 1
-        }).setView([39.8283, -98.5795], 5); // Center around continental US.
+        }).setView([39.8283, -98.5795], 5); // Center around continental US.
         L.control.zoom({ position: 'topright' }).addTo(map);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             attribution: '© OpenStreetMap © CartoDB',
             maxZoom: 19
         }).addTo(map);
+
+        // Use Leaflet's canvas renderer for performant polyline rendering
         const customCanvasRenderer = L.canvas({ padding: 0.5 });
+
         let roadLayer = null;
         // Interactive Selection Drawing Logic.
         let selectionMode = false;
@@ -790,6 +906,13 @@
         let roadsInterval = null;
         let congestionInterval = null;
         let selectedVehicleCount = 0;
+    // Update vehicle count display in UI
+    function updateVehicleCountDisplay() {
+        const el = document.getElementById('vehicle-count-display');
+        if (el) {
+            el.textContent = `Vehicles: ${selectedVehicleCount}`;
+        }
+    }
         let selectedBounds = null;
         const simulationSettingsCard = document.getElementById('simulation-settings-card');
         const loadingCard = document.getElementById('loading-card');
@@ -818,7 +941,6 @@
             const eventSource = new EventSource(queryUrl);
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
-                console.log("SSE Message:", data);
                 if (data.status === 'error') {
                     eventSource.close();
                     showChecklistError(data.message);
@@ -965,6 +1087,7 @@
                 vehicleCountInput.value = '50';
             }
             selectedVehicleCount = vehicleCount;
+            updateVehicleCountDisplay();
             if (vehicleCount > 5000) {
                 const proceed = window.confirm('Spawning more than 5,000 vehicles may take a long time. Do you want to continue?');
                 if (!proceed) {
@@ -985,7 +1108,6 @@
             const eventSource = new EventSource(`/api/spawn-vehicles?vehicleCount=${encodeURIComponent(vehicleCount)}`);
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
-                console.log("SSE Message:", data);
                 if (data.status === 'error') {
                     eventSource.close();
                     showChecklistError(data.message);
@@ -1043,7 +1165,6 @@
             const eventSource = new EventSource(`/api/spawn-vehicles?vehicleCount=${encodeURIComponent(vehicleCount)}`);
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
-                console.log("SSE Message:", data);
                 if (data.status === 'error') {
                     eventSource.close();
                     showChecklistError(data.message);
@@ -1163,7 +1284,17 @@
         // Active Simulation Polling & Render Engine (from previous optimizations).
         const targetCongestionMap = new Map();
         const currentCongestionMap = new Map();
+        // Smoothing factor for congestion interpolation (higher = faster transitions)
+        // Increase this value to make transitions snappier. 
+        const SMOOTHING_FACTOR = 0.05;
+        // Minimum delta below which we snap to the target to avoid tiny updates
+        const MIN_DELTA_THRESHOLD = 0.000001;
         let cachedRoads = [];
+        let cachedAllRoads = [];
+        let cachedMajorRoads = [];
+        let cachedDistributionCongestion = [];
+        let distributionFilter = 'all';
+        const distributionSelect = document.getElementById('distribution-filter-select');
         function getBBoxParams() {
             const b = map.getBounds();
             const z = Math.round(map.getZoom());
@@ -1177,6 +1308,45 @@
             const t = Math.min(Math.max(v, 0), 1);
             const hue = (1 - t) * 120;
             return `hsl(${hue},90%,45%)`;
+        }
+
+        // Canonical key helpers: use higher precision and order endpoints so direction doesn't matter.
+        const KEY_PRECISION = 6;
+        function formatPair(lat, lon) {
+            return Number(lat).toFixed(KEY_PRECISION) + "," + Number(lon).toFixed(KEY_PRECISION);
+        }
+        function canonicalSegmentKey(fromLat, fromLon, toLat, toLon) {
+            const a = formatPair(fromLat, fromLon);
+            const b = formatPair(toLat, toLon);
+            return a < b ? `${a}|${b}` : `${b}|${a}`;
+        }
+        if (distributionSelect) {
+            const csTrigger = distributionSelect.querySelector('.cs-trigger');
+            const csOptions = Array.from(distributionSelect.querySelectorAll('.cs-option'));
+            const csLabel = distributionSelect.querySelector('.cs-label');
+            function closeCS() { distributionSelect.classList.remove('open'); distributionSelect.querySelector('.cs-options').setAttribute('aria-hidden','true'); csTrigger.setAttribute('aria-expanded','false'); }
+            function openCS() { distributionSelect.classList.add('open'); distributionSelect.querySelector('.cs-options').setAttribute('aria-hidden','false'); csTrigger.setAttribute('aria-expanded','true'); }
+            csTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (distributionSelect.classList.contains('open')) closeCS(); else openCS();
+            });
+            csOptions.forEach(opt => {
+                opt.addEventListener('click', (e) => {
+                    const val = e.currentTarget.dataset.value;
+                    distributionFilter = val;
+                    csOptions.forEach(o => o.setAttribute('aria-selected','false'));
+                    e.currentTarget.setAttribute('aria-selected','true');
+                    if (csLabel) csLabel.textContent = e.currentTarget.textContent;
+                    closeCS();
+                    const selectedRoads = distributionFilter === 'major' ? cachedMajorRoads : cachedAllRoads;
+                    if (selectedRoads.length && cachedDistributionCongestion.length) {
+                        drawDistribution(selectedRoads, cachedDistributionCongestion);
+                    }
+                });
+            });
+            document.addEventListener('click', (e) => {
+                if (!distributionSelect.contains(e.target)) closeCS();
+            });
         }
         // Render a small line chart showing distribution of roads by congestion level.
         function drawDistribution(allRoads, congestionArray) {
@@ -1201,14 +1371,13 @@
             const bins = 21;
             const counts = new Array(bins).fill(0);
             const congestionMap = new Map();
-            const toKey = (lat, lon) => Number(lat).toFixed(5) + "," + Number(lon).toFixed(5);
             congestionArray.forEach(e => {
-                const key = `${toKey(e.from_lat, e.from_lon)}|${toKey(e.to_lat, e.to_lon)}`;
+                const key = canonicalSegmentKey(e.from_lat, e.from_lon, e.to_lat, e.to_lon);
                 congestionMap.set(key, Math.min(Math.max(Number(e.congestion) || 0, 0), 1));
             });
             const totalEdges = Array.isArray(allRoads) ? allRoads.length : 0;
             allRoads.forEach(road => {
-                const key = `${toKey(road[0], road[1])}|${toKey(road[2], road[3])}`;
+                const key = canonicalSegmentKey(road[0], road[1], road[2], road[3]);
                 const v = congestionMap.get(key) || 0;
                 const idx = Math.round(v * (bins - 1));
                 counts[idx]++;
@@ -1217,7 +1386,7 @@
             try {
                 const summaryEl = document.getElementById('congestion-stats');
                 if (summaryEl) {
-                    summaryEl.textContent = `Edges: ${edges} · Vehicles: ${selectedVehicleCount}`;
+                    summaryEl.textContent = `${edges}`;
                 }
             } catch (e) {
                 // ignore
@@ -1259,76 +1428,165 @@
         }
         function refresh() {
             if (!simulationStarted) return;
-            // fetch displayed roads + displayed congestion + global congestion
-            Promise.all([
-                fetch(`/roads?${getBBoxParams()}`).then(r => r.json()),
-                fetch(`/congestion?${getBBoxParams()}`).then(r => r.json()),
-                fetch(`/congestion?minLat=-90&minLon=-180&maxLat=90&maxLon=180`).then(r => r.json()),
-                fetch(`/roads?minLat=-90&minLon=-180&maxLat=90&maxLon=180&zoom=20`).then(r => r.json())
-            ]).then(([roads, congestionEMA, allCongestion, allRoads]) => {
-                const toKey = (lat, lon) => Number(lat).toFixed(5) + "," + Number(lon).toFixed(5);
-                targetCongestionMap.clear();
-                congestionEMA.forEach(e => {
-                    const key = `${toKey(e.from_lat, e.from_lon)}|${toKey(e.to_lat, e.to_lon)}`;
-                    targetCongestionMap.set(key, e.congestion);
-                    if (!currentCongestionMap.has(key)) {
-                        currentCongestionMap.set(key, 0);
-                    }
+            const bboxParams = getBBoxParams();
+
+            fetch(`/roads?${bboxParams}`)
+                .then(r => r.ok ? r.json() : Promise.reject(new Error(`Roads request failed (${r.status})`)))
+                .then(roads => {
+                    cachedRoads = roads;
+                })
+                .catch(err => {
+                    console.error("Roads refresh failed:", err);
                 });
-                cachedRoads = roads;
-                drawDistribution(allRoads, allCongestion);
-                document.getElementById('stat-time').textContent = new Date().toLocaleTimeString();
-            }).catch(err => console.error("Traffic update failed:", err));
+
+            fetch(`/congestion?${bboxParams}`)
+                .then(r => r.ok ? r.json() : Promise.reject(new Error(`Congestion request failed (${r.status})`)))
+                .then(congestionEMA => {
+                            const nextTargetCongestionMap = new Map();
+                            congestionEMA.forEach(e => {
+                                const key = canonicalSegmentKey(e.from_lat, e.from_lon, e.to_lat, e.to_lon);
+                                const targetVal = e.congestion;
+                                nextTargetCongestionMap.set(key, targetVal);
+                                // If this is the first time seeing a road with EMA data, initialize displayed value
+                                // to the target (not 0) so it appears at correct congestion immediately,
+                                // then animates smoothly as EMA changes over time.
+                                if (!currentCongestionMap.has(key)) {
+                                    currentCongestionMap.set(key, targetVal);
+                                }
+                            });
+                    targetCongestionMap.clear();
+                    nextTargetCongestionMap.forEach((value, key) => targetCongestionMap.set(key, value));
+                    document.getElementById('stat-time').textContent = new Date().toLocaleTimeString();
+                })
+                .catch(err => {
+                    console.error("Congestion refresh failed:", err);
+                });
+
+            fetch(`/congestion?minLat=-90&minLon=-180&maxLat=90&maxLon=180`)
+                .then(r => r.ok ? r.json() : Promise.reject(new Error(`Global congestion request failed (${r.status})`)))
+                .then(allCongestion => {
+                    cachedDistributionCongestion = allCongestion;
+                    const distributionRoads = distributionFilter === 'major' ? cachedMajorRoads : cachedAllRoads;
+                    if (distributionRoads.length) {
+                        drawDistribution(distributionRoads, cachedDistributionCongestion);
+                    }
+                })
+                .catch(err => {
+                    console.error("Distribution congestion fetch failed:", err);
+                });
+
+            fetch(`/roads?minLat=-90&minLon=-180&maxLat=90&maxLon=180&zoom=20`)
+                .then(r => r.ok ? r.json() : Promise.reject(new Error(`All roads request failed (${r.status})`)))
+                .then(allRoads => {
+                    cachedAllRoads = allRoads;
+                    const distributionRoads = distributionFilter === 'major' ? cachedMajorRoads : cachedAllRoads;
+                    if (cachedDistributionCongestion.length && distributionRoads.length) {
+                        drawDistribution(distributionRoads, cachedDistributionCongestion);
+                    }
+                })
+                .catch(err => {
+                    console.error("All roads fetch failed:", err);
+                });
+
+            fetch(`/roads?minLat=-90&minLon=-180&maxLat=90&maxLon=180&zoom=8`)
+                .then(r => r.ok ? r.json() : Promise.reject(new Error(`Major roads request failed (${r.status})`)))
+                .then(majorRoads => {
+                    cachedMajorRoads = majorRoads;
+                    const distributionRoads = distributionFilter === 'major' ? cachedMajorRoads : cachedAllRoads;
+                    if (cachedDistributionCongestion.length && distributionRoads.length) {
+                        drawDistribution(distributionRoads, cachedDistributionCongestion);
+                    }
+                })
+                .catch(err => {
+                    console.error("Major roads fetch failed:", err);
+                });
         }
-        // 60FPS animation ticker.
+        // 60FPS animation ticker — EMA drives color updates via setStyle each frame.
         funcAnimTicker();
         function funcAnimTicker() {
             if (simulationStarted && cachedRoads.length > 0) {
+                const currentZoom = map.getZoom();
                 const currentBounds = map.getBounds();
-                const toKey = (lat, lon) => Number(lat).toFixed(5) + "," + Number(lon).toFixed(5);
-                const features = [];
+
+                // Step the EMA one tick toward targets
                 currentCongestionMap.forEach((currentVal, key) => {
                     const targetVal = targetCongestionMap.get(key) || 0;
                     const delta = targetVal - currentVal;
                     if (Math.abs(delta) < 0.005) {
                         currentCongestionMap.set(key, targetVal);
                     } else {
-                        currentCongestionMap.set(key, currentVal + (delta * 0.12));
+                        currentCongestionMap.set(key, currentVal + delta * SMOOTHING_FACTOR);
                     }
                 });
-                cachedRoads.forEach(seg => {
+
+                // Determine which roads should be visible at this zoom level
+                const renderRoads = (currentZoom >= 12 || cachedMajorRoads.length === 0) ? cachedRoads : cachedMajorRoads;
+
+                // Build the set of features that should be visible (bounds-filtered)
+                const visibleFeatures = [];
+                renderRoads.forEach(seg => {
                     const fromLat = seg[0], fromLon = seg[1], toLat = seg[2], toLon = seg[3];
-                    const startPoint = L.latLng(fromLat, fromLon);
-                    const endPoint = L.latLng(toLat, toLon);
-                    if (currentBounds.contains(startPoint) || currentBounds.contains(endPoint)) {
-                        const key = `${toKey(fromLat, fromLon)}|${toKey(toLat, toLon)}`;
-                        const displayCongestion = currentCongestionMap.get(key) || 0;
-                        features.push({
-                            type: 'Feature',
-                            geometry: {
-                                type: 'LineString',
-                                coordinates: [[fromLon, fromLat], [toLon, toLat]]
-                            },
-                            properties: {
-                                congestion: displayCongestion
-                            }
-                        });
+                    if (currentBounds.contains(L.latLng(fromLat, fromLon)) || currentBounds.contains(L.latLng(toLat, toLon))) {
+                        const key = canonicalSegmentKey(fromLat, fromLon, toLat, toLon);
+                        visibleFeatures.push({ key, fromLat, fromLon, toLat, toLon });
                     }
                 });
-                if (roadLayer) {
-                    map.removeLayer(roadLayer);
+
+                if (!roadLayer) {
+                    // First creation — build the layer from scratch
+                    const fc = {
+                        type: 'FeatureCollection',
+                        features: visibleFeatures.map(({ key, fromLat, fromLon, toLat, toLon }) => ({
+                            type: 'Feature',
+                            geometry: { type: 'LineString', coordinates: [[fromLon, fromLat], [toLon, toLat]] },
+                            properties: { segmentKey: key }
+                        }))
+                    };
+                    roadLayer = L.geoJSON(fc, {
+                        renderer: customCanvasRenderer,
+                        style: f => ({
+                            color: congestionColor(currentCongestionMap.get(f.properties.segmentKey) || 0),
+                            weight: 2.0,
+                            opacity: 0.85,
+                            lineCap: 'round',
+                            lineJoin: 'round'
+                        }),
+                        interactive: false
+                    }).addTo(map);
+                } else {
+                    // Sync which roads are shown (only changes on zoom/pan)
+                    const visibleKeys = new Set(visibleFeatures.map(f => f.key));
+
+                    // Remove roads that left the view
+                    const toRemove = [];
+                    roadLayer.eachLayer(l => {
+                        const key = l.feature && l.feature.properties && l.feature.properties.segmentKey;
+                        if (key && !visibleKeys.has(key)) toRemove.push(l);
+                    });
+                    toRemove.forEach(l => roadLayer.removeLayer(l));
+
+                    // Build lookup of what's still in the layer
+                    const existingMap = new Map();
+                    roadLayer.eachLayer(l => {
+                        const key = l.feature && l.feature.properties && l.feature.properties.segmentKey;
+                        if (key) existingMap.set(key, l);
+                    });
+
+                    // Add new roads; update colors on existing roads via EMA
+                    visibleFeatures.forEach(({ key, fromLat, fromLon, toLat, toLon }) => {
+                        const existing = existingMap.get(key);
+                        if (existing) {
+                            // EMA-driven color update — this is what makes it smooth
+                            existing.setStyle({ color: congestionColor(currentCongestionMap.get(key) || 0) });
+                        } else {
+                            roadLayer.addData({
+                                type: 'Feature',
+                                geometry: { type: 'LineString', coordinates: [[fromLon, fromLat], [toLon, toLat]] },
+                                properties: { segmentKey: key }
+                            });
+                        }
+                    });
                 }
-                roadLayer = L.geoJSON({ type: 'FeatureCollection', features }, {
-                    renderer: customCanvasRenderer, 
-                    style: f => ({
-                        color: congestionColor(f.properties.congestion),
-                        weight: 2.0,
-                        opacity: 0.85,
-                        lineCap: 'round',
-                        lineJoin: 'round'
-                    }),
-                    interactive: false
-                }).addTo(map);
             }
             requestAnimationFrame(funcAnimTicker);
         }

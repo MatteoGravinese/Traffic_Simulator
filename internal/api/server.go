@@ -1,8 +1,8 @@
 package api
 
 import (
-	"context"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -357,78 +357,74 @@ func StartServer(state *simulation.SimState) {
 			tempFilePath = tempFile.Name()
 			tempFile.Close()
 
-			overpassQuery := fmt.Sprintf(`[out:xml][timeout:60];(way["highway"](%f,%f,%f,%f););(._;>;);out body;`, south, west, north, east)
-			// Parallel download from mirrors (first successful wins)
+			overpassQuery := fmt.Sprintf(`[out:xml][timeout:180];(way["highway"](%f,%f,%f,%f););(._;>;);out body;`, south, west, north, east)
+			// Try Overpass mirrors one at a time. ResponseWriter/SSE writes must stay
+			// on this request goroutine; concurrent mirror progress can corrupt the stream.
 			mirrors := []string{
 				"https://overpass-api.de/api/interpreter",
+				"https://overpass.kumi.systems/api/interpreter",
+				"https://overpass.openstreetmap.fr/api/interpreter",
+				"https://z.overpass-api.de/api/interpreter",
 			}
-			// Context to cancel remaining requests once one succeeds
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			type result struct {
-				resp *http.Response
-				err  error
-				host string
-			}
-			resCh := make(chan result, len(mirrors))
-
-			for _, mirrorURL := range mirrors {
-				go func(mirror string) {
-					mirrorHost := mirror
-					u, err := url.Parse(mirror)
-					if err == nil {
-						mirrorHost = u.Host
-					}
-					sendProgress("downloading", fmt.Sprintf("Downloading map data from OSM (%s)...", mirrorHost), 0.0)
-
-					client := &http.Client{Timeout: 60 * time.Second}
-					data := url.Values{}
-					data.Set("data", overpassQuery)
-					req, err := http.NewRequestWithContext(ctx, "POST", mirror, strings.NewReader(data.Encode()))
-					if err != nil {
-						resCh <- result{nil, err, mirrorHost}
-						return
-					}
-					req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-					req.Header.Set("User-Agent", "TrafficSimulator/1.0 (matteogravinese@github.com)")
-
-					resp, err := client.Do(req)
-					if err != nil {
-						resCh <- result{nil, err, mirrorHost}
-						return
-					}
-					if resp.StatusCode != http.StatusOK {
-						resp.Body.Close()
-						resCh <- result{nil, fmt.Errorf("Overpass API error (HTTP %s) from %s", resp.Status, mirrorHost), mirrorHost}
-						return
-					}
-					resCh <- result{resp, nil, mirrorHost}
-				}(mirrorURL)
-			}
-
 			var resp *http.Response
 			var downloadErr error
-			for i := 0; i < len(mirrors); i++ {
-				r := <-resCh
-				if r.err == nil {
-					resp = r.resp
-					
-					break
-				} else {
-					downloadErr = r.err
+			var respCancel context.CancelFunc
+			client := &http.Client{Timeout: 5 * time.Minute}
+			for _, mirror := range mirrors {
+				mirrorHost := mirror
+				if u, err := url.Parse(mirror); err == nil {
+					mirrorHost = u.Host
 				}
+				sendProgress("downloading", fmt.Sprintf("Downloading map data from OSM (%s)...", mirrorHost), 0.0)
+
+				ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+				data := url.Values{}
+				data.Set("data", overpassQuery)
+				req, err := http.NewRequestWithContext(ctx, "POST", mirror, strings.NewReader(data.Encode()))
+				if err != nil {
+					cancel()
+					downloadErr = fmt.Errorf("%s: %w", mirrorHost, err)
+					continue
+				}
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				req.Header.Set("User-Agent", "TrafficSimulator/1.0 (matteogravinese@github.com)")
+
+				mirrorResp, err := client.Do(req)
+				if err != nil {
+					cancel()
+					downloadErr = fmt.Errorf("%s: %w", mirrorHost, err)
+					continue
+				}
+				if mirrorResp.StatusCode != http.StatusOK {
+					mirrorResp.Body.Close()
+					cancel()
+					downloadErr = fmt.Errorf("%s: Overpass API error (HTTP %s)", mirrorHost, mirrorResp.Status)
+					continue
+				}
+
+				resp = mirrorResp
+				respCancel = cancel
+				sendProgress("downloading", fmt.Sprintf("Download succeeded from %s", mirrorHost), 0.0)
+				break
+			}
+			if respCancel != nil {
+				defer respCancel()
+			}
+			if resp != nil {
+				defer resp.Body.Close()
 			}
 			if resp == nil {
-				downloadErr = fmt.Errorf("failed to download map data: %v", downloadErr)
+				if downloadErr == nil {
+					downloadErr = fmt.Errorf("all Overpass mirrors failed")
+				} else {
+					downloadErr = fmt.Errorf("all Overpass mirrors failed; last error: %w", downloadErr)
+				}
 			}
-
 			if downloadErr != nil {
 				os.Remove(tempFilePath)
 				sendProgress("error", fmt.Sprintf("Failed to download map data: %v. Please try again or upload an OSM file.", downloadErr), -1)
 				return
 			}
-			defer resp.Body.Close()
 
 			out, err := os.Create(tempFilePath)
 			if err != nil {
@@ -449,9 +445,6 @@ func StartServer(state *simulation.SimState) {
 				sendProgress("error", fmt.Sprintf("Failed to save downloaded data: %v", err), -1)
 				return
 			}
-			// Cancel other mirror requests now that we have the data
-			cancel()
-			// Report completion progress
 			sendProgress("downloading", "Downloading map data from OpenStreetMap...", 1.0)
 		}
 
@@ -518,13 +511,13 @@ func StartServer(state *simulation.SimState) {
 
 		// For done progress event, return the calculated coordinates so map can center:
 		event := map[string]interface{}{
-			"status":  "done",
-			"message": "Network loaded successfully!",
+			"status":   "done",
+			"message":  "Network loaded successfully!",
 			"progress": 1.0,
-			"minLat":  minLat,
-			"minLon":  minLon,
-			"maxLat":  maxLat,
-			"maxLon":  maxLon,
+			"minLat":   minLat,
+			"minLon":   minLon,
+			"maxLat":   maxLat,
+			"maxLon":   maxLon,
 		}
 		data, _ := json.Marshal(event)
 		fmt.Fprintf(w, "data: %s\n\n", string(data))

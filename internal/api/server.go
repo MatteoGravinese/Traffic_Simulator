@@ -12,8 +12,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/MatteoGravinese/Traffic_Simulator/internal/osmpath"
 	"github.com/MatteoGravinese/Traffic_Simulator/internal/graph"
 	"github.com/MatteoGravinese/Traffic_Simulator/internal/simulation"
 )
@@ -58,6 +60,12 @@ func (g *gzipResponseWriter) Write(b []byte) (int, error) {
 	return g.Writer.Write(b)
 }
 
+var gzipWriterPool = sync.Pool{
+	New: func() interface{} {
+		return gzip.NewWriter(nil)
+	},
+}
+
 func withGzip(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
@@ -65,8 +73,12 @@ func withGzip(h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Encoding", "gzip")
-		gz := gzip.NewWriter(w)
-		defer gz.Close()
+		gz := gzipWriterPool.Get().(*gzip.Writer)
+		gz.Reset(w)
+		defer func() {
+			gz.Close()
+			gzipWriterPool.Put(gz)
+		}()
 		h(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
 	}
 }
@@ -95,10 +107,16 @@ func StartServer(state *simulation.SimState) {
 		maxLon, _ := strconv.ParseFloat(q.Get("maxLon"), 64)
 		zoom, _ := strconv.Atoi(q.Get("zoom"))
 		maxPriority := minPriorityForZoom(zoom)
-		segments := make([]RoadSegment, 0)
 		state.RLock()
 		g := state.G
 		priorities := state.EdgePriorities
+		segmentCap := 0
+		if g != nil {
+			for _, edges := range g.Edges {
+				segmentCap += len(edges)
+			}
+		}
+		segments := make([]RoadSegment, 0, segmentCap)
 		if g != nil {
 			for fromID, edges := range g.Edges {
 				fromNode, ok := g.Nodes[fromID]
@@ -145,8 +163,12 @@ func StartServer(state *simulation.SimState) {
 		maxLat, _ := strconv.ParseFloat(q.Get("maxLat"), 64)
 		maxLon, _ := strconv.ParseFloat(q.Get("maxLon"), 64)
 		state.RLock()
-		edges := make([]EdgeCongestion, 0)
 		g := state.G
+		edgeCap := 0
+		for _, toMap := range state.CongestionEMA {
+			edgeCap += len(toMap)
+		}
+		edges := make([]EdgeCongestion, 0, edgeCap)
 		if g != nil {
 			for fromID, toMap := range state.CongestionEMA {
 				fromNode, ok := g.Nodes[fromID]
@@ -243,12 +265,12 @@ func StartServer(state *simulation.SimState) {
 		}
 		defer file.Close()
 
-		if err := os.MkdirAll("data", 0755); err != nil {
-			http.Error(w, fmt.Sprintf("Failed to create data directory: %v", err), http.StatusInternalServerError)
+		if err := os.MkdirAll(osmpath.Dir, 0755); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to create %s directory: %v", osmpath.Dir, err), http.StatusInternalServerError)
 			return
 		}
 
-		tempFile, err := os.CreateTemp("data", "uploaded-*.osm")
+		tempFile, err := os.CreateTemp(osmpath.Dir, "uploaded-*.osm")
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to create temp file: %v", err), http.StatusInternalServerError)
 			return
@@ -299,7 +321,7 @@ func StartServer(state *simulation.SimState) {
 
 		if fileParam != "" {
 			// Using uploaded file
-			tempFilePath = filepath.Join("data", filepath.Base(fileParam))
+			tempFilePath = osmpath.Join(fileParam)
 			if _, err := os.Stat(tempFilePath); os.IsNotExist(err) {
 				sendProgress("error", "Uploaded file not found. Please upload again.", -1)
 				return
@@ -345,11 +367,11 @@ func StartServer(state *simulation.SimState) {
 			}
 
 			// Download the OSM file using multi-mirror failover
-			if err := os.MkdirAll("data", 0755); err != nil {
-				sendProgress("error", fmt.Sprintf("Failed to create data directory: %v", err), -1)
+			if err := os.MkdirAll(osmpath.Dir, 0755); err != nil {
+				sendProgress("error", fmt.Sprintf("Failed to create %s directory: %v", osmpath.Dir, err), -1)
 				return
 			}
-			tempFile, err := os.CreateTemp("data", "active-*.osm")
+			tempFile, err := os.CreateTemp(osmpath.Dir, "active-*.osm")
 			if err != nil {
 				sendProgress("error", fmt.Sprintf("Failed to create temp file: %v", err), -1)
 				return
@@ -448,8 +470,10 @@ func StartServer(state *simulation.SimState) {
 			sendProgress("downloading", "Downloading map data from OpenStreetMap...", 1.0)
 		}
 
-		// Delete the file when done parsing
-		defer os.Remove(tempFilePath)
+		// Delete temp downloads/uploads when done parsing (keep local benchmark cache).
+		if filepath.Base(tempFilePath) != filepath.Base(osmpath.PittsburghOSM) {
+			defer os.Remove(tempFilePath)
+		}
 
 		// Parse the OSM file.
 		sendProgress("parsing", "Parsing XML data and building road network graph...", 0.0)
@@ -505,7 +529,7 @@ func StartServer(state *simulation.SimState) {
 
 		// Initialize the simulation state without spawning vehicles.
 		sendProgress("initializing", "Loading road network into simulation state...", 0.0)
-		state.UpdateGraph(g, ch, cch, 0.0, func(p float64) {
+		state.UpdateGraph(g, ch, cch, func(p float64) {
 			sendProgress("initializing", "Loading road network into simulation state...", p)
 		})
 

@@ -663,7 +663,7 @@
                     <span style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #111522; padding: 0 10px; font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">OR</span>
                 </div>
                 <div class="glass-panel" style="background: rgba(255, 255, 255, 0.02); padding: 16px;">
-                    <h3 style="font-size: 14px; color: var(--text-primary); margin-bottom: 6px;">Option B: Upload OSM File</h3>
+                    <h3 style="font-size: 14px; color: var(--text-primary); margin-bottom: 6px;">Upload OSM File</h3>
                     <p style="font-size: 11px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.4;">
                         Select a raw OpenStreetMap <code>.osm</code> XML file to parse and simulate (any size supported).
                     </p>
@@ -749,17 +749,6 @@
             <div id="network-error-message" class="error-box" style="display: none; margin-top: 16px;"></div>
             <button id="btn-close-network-error" class="btn" style="display: none; margin-top: 20px;">Back to Map Selection</button>
         </div>
-        <div id="simulation-settings-card" class="loading-card" style="display: none;">
-            <h2>Spawn Vehicles</h2>
-            <p class="loading-subtitle">Enter the exact number of vehicles to add after the network is loaded.</p>
-            <div style="display:flex;flex-direction:column;gap:12px;">
-                <div style="font-size:13px;color:var(--text-secondary);font-weight:500;">Vehicle count</div>
-                <input id="vehicle-count" type="number" min="1" step="1" value="50" style="width:100%;margin-top:6px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:var(--text-primary);font-size:13px;outline:none;" />
-                <span id="vehicle-count-help" style="font-size:11px;color:var(--text-muted);">Default 50 vehicles. Enter a whole number.</span>
-            </div>
-            <button id="btn-start-simulation" class="btn" style="margin-top:16px;">Spawn Vehicles</button>
-            <button id="btn-cancel-settings" class="btn btn-outline" style="margin-top:8px;">Cancel</button>
-        </div>
         <div id="loading-card" class="loading-card" style="display:none;">
             <h2 id="loading-card-title">Generating Road Network</h2>
             <p id="loading-card-subtitle" class="loading-subtitle">Configuring contraction hierarchies & agents. Please wait...</p>
@@ -781,7 +770,7 @@
                 </div>
                 <div class="checklist-item" id="step-preprocessing_cch">
                     <span class="step-icon">○</span>
-                    <span class="step-label">Preprocess Customizable CH</span>
+                    <span class="step-label">Preprocess Customizable Contraction Hierarchies</span>
                     <div class="step-progress"><div class="step-progress-fill" data-step="preprocessing_cch"></div></div>
                 </div>
                 <div class="checklist-item" id="step-initializing">
@@ -822,15 +811,18 @@
         let bboxRect = null;
         const btnDraw = document.getElementById('btn-draw');
         const btnConfirm = document.getElementById('btn-confirm');
-        const btnStartSimulation = document.getElementById('btn-start-simulation');
-        const btnCancelSettings = document.getElementById('btn-cancel-settings');
-        const vehicleCountInput = document.getElementById('vehicle-count');
         const bboxCoordsDiv = document.getElementById('bbox-coords');
         const swCoordSpan = document.getElementById('sw-coord');
         const neCoordSpan = document.getElementById('ne-coord');
         btnDraw.addEventListener('click', () => {
             selectionMode = !selectionMode;
             if (selectionMode) {
+                if (bboxRect) {
+                    map.removeLayer(bboxRect);
+                    bboxRect = null;
+                }
+                btnConfirm.disabled = true;
+                bboxCoordsDiv.style.display = 'none';
                 btnDraw.textContent = "Cancel Selection Mode";
                 btnDraw.classList.add('active');
                 map.dragging.disable();
@@ -903,18 +895,10 @@
         // SSE Run Simulation Logic.
         const stepsList = ['downloading', 'parsing', 'preprocessing_ch', 'preprocessing_cch', 'initializing'];
         let simulationStarted = false;
-        let roadsInterval = null;
-        let congestionInterval = null;
-        let selectedVehicleCount = 0;
-    // Update vehicle count display in UI
-    function updateVehicleCountDisplay() {
-        const el = document.getElementById('vehicle-count-display');
-        if (el) {
-            el.textContent = `Vehicles: ${selectedVehicleCount}`;
-        }
-    }
+        const HUD_REFRESH_MS = 500;
+        let refreshInterval = null;
+        let globalRefreshInterval = null;
         let selectedBounds = null;
-        const simulationSettingsCard = document.getElementById('simulation-settings-card');
         const loadingCard = document.getElementById('loading-card');
         const networkLoadingCard = document.getElementById('network-loading-card');
         const networkProgressText = document.getElementById('network-progress-text');
@@ -924,7 +908,6 @@
         const hudVehicleCountInput = document.getElementById('hud-vehicle-count');
         const btnApplyVehicles = document.getElementById('btn-apply-vehicles');
         function loadNetwork(queryUrl, fallbackBounds) {
-            selectedVehicleCount = 0;
             document.getElementById('loading-card-title').textContent = "Generating Road Network";
             document.getElementById('loading-card-subtitle').textContent = "Configuring contraction hierarchies & agents. Please wait...";
             document.getElementById('step-downloading').style.display = '';
@@ -934,7 +917,6 @@
             stepInitializing.style.display = 'none';
             networkLoadingCard.style.display = 'none';
             loadingCard.style.display = 'block';
-            simulationSettingsCard.style.display = 'none';
             resetChecklist();
             document.getElementById('loading-overlay').style.display = 'flex';
 
@@ -971,9 +953,10 @@
                             bboxRect = null;
                         }
                         simulationStarted = true;
-                        refresh();
-                        roadsInterval = setInterval(refresh, 1000);
-                        congestionInterval = setInterval(refresh, 500);
+                        refreshViewport();
+                        refreshGlobal();
+                        refreshInterval = setInterval(refreshViewport, HUD_REFRESH_MS);
+                        globalRefreshInterval = setInterval(refreshGlobal, HUD_REFRESH_MS);
                     }, 800);
                 }
             };
@@ -1070,30 +1053,19 @@
                 btnUploadFile.textContent = "Upload & Run";
             });
         });
-        btnCancelSettings.addEventListener('click', () => {
-            document.getElementById('loading-overlay').style.display = 'none';
-            simulationSettingsCard.style.display = 'none';
-        });
-        btnStartSimulation.addEventListener('click', () => {
-            if (!selectedBounds) return;
-            const bounds = selectedBounds;
-            const minLat = bounds.getSouth().toFixed(5);
-            const minLon = bounds.getWest().toFixed(5);
-            const maxLat = bounds.getNorth().toFixed(5);
-            const maxLon = bounds.getEast().toFixed(5);
-            let vehicleCount = parseInt(vehicleCountInput.value, 10);
+        function normalizeVehicleCount(rawValue, inputEl, defaultValue = 50) {
+            let vehicleCount = parseInt(rawValue, 10);
             if (Number.isNaN(vehicleCount) || vehicleCount <= 0) {
-                vehicleCount = 50;
-                vehicleCountInput.value = '50';
+                vehicleCount = defaultValue;
+                if (inputEl) inputEl.value = String(defaultValue);
             }
-            selectedVehicleCount = vehicleCount;
-            updateVehicleCountDisplay();
-            if (vehicleCount > 5000) {
-                const proceed = window.confirm('Spawning more than 5,000 vehicles may take a long time. Do you want to continue?');
-                if (!proceed) {
-                    return;
-                }
-            }
+            return vehicleCount;
+        }
+        function confirmLargeFleet(vehicleCount) {
+            if (vehicleCount <= 50000) return true;
+            return window.confirm('Spawning more than 50,000 vehicles may take a long time. Do you want to continue?');
+        }
+        function beginVehicleSpawnUI({ restartSimulation = false } = {}) {
             document.getElementById('loading-card-title').textContent = "Spawning Vehicles";
             document.getElementById('loading-card-subtitle').textContent = "Adding agents to the simulation network...";
             document.getElementById('step-downloading').style.display = 'none';
@@ -1102,9 +1074,29 @@
             document.getElementById('step-preprocessing_cch').style.display = 'none';
             stepInitializing.style.display = '';
             document.getElementById('network-loading-card').style.display = 'none';
-            simulationSettingsCard.style.display = 'none';
+            if (restartSimulation) {
+                clearInterval(refreshInterval);
+                clearInterval(globalRefreshInterval);
+                simulationStarted = false;
+                document.getElementById('loading-overlay').style.display = 'flex';
+            }
             loadingCard.style.display = 'block';
             resetChecklist();
+        }
+        function finishVehicleSpawnUI() {
+            setTimeout(() => {
+                document.getElementById('loading-overlay').style.display = 'none';
+                document.getElementById('status-light').classList.add('active');
+                document.getElementById('status-text').textContent = "Simulation Running";
+                simulationStarted = true;
+                refreshViewport();
+                refreshGlobal();
+                refreshInterval = setInterval(refreshViewport, HUD_REFRESH_MS);
+                globalRefreshInterval = setInterval(refreshGlobal, HUD_REFRESH_MS);
+            }, 800);
+        }
+        function startVehicleSpawn(vehicleCount, { restartSimulation = false } = {}) {
+            beginVehicleSpawnUI({ restartSimulation });
             const eventSource = new EventSource(`/api/spawn-vehicles?vehicleCount=${encodeURIComponent(vehicleCount)}`);
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
@@ -1116,15 +1108,7 @@
                 updateChecklist(data.status, data.message, data.progress);
                 if (data.status === 'done') {
                     eventSource.close();
-                    setTimeout(() => {
-                        document.getElementById('loading-overlay').style.display = 'none';
-                        document.getElementById('status-light').classList.add('active');
-                        document.getElementById('status-text').textContent = "Simulation Running";
-                        simulationStarted = true;
-                        refresh();
-                        roadsInterval = setInterval(refresh, 1000);
-                        congestionInterval = setInterval(refresh, 500);
-                    }, 800);
+                    finishVehicleSpawnUI();
                 }
             };
             eventSource.onerror = function(err) {
@@ -1132,63 +1116,12 @@
                 eventSource.close();
                 showChecklistError("Connection to backend server lost or timed out. Please verify the console and try again.");
             };
-        });
+        }
         btnApplyVehicles.addEventListener('click', () => {
             if (!selectedBounds) return;
-            const bounds = selectedBounds;
-            let vehicleCount = parseInt(hudVehicleCountInput.value, 10);
-            if (Number.isNaN(vehicleCount) || vehicleCount <= 0) {
-                vehicleCount = 50;
-                hudVehicleCountInput.value = '50';
-            }
-            selectedVehicleCount = vehicleCount;
-            if (vehicleCount > 5000) {
-                const proceed = window.confirm('Spawning more than 5,000 vehicles may take a long time. Do you want to continue?');
-                if (!proceed) {
-                    return;
-                }
-            }
-            document.getElementById('loading-card-title').textContent = "Spawning Vehicles";
-            document.getElementById('loading-card-subtitle').textContent = "Adding agents to the simulation network...";
-            document.getElementById('step-downloading').style.display = 'none';
-            document.getElementById('step-parsing').style.display = 'none';
-            document.getElementById('step-preprocessing_ch').style.display = 'none';
-            document.getElementById('step-preprocessing_cch').style.display = 'none';
-            stepInitializing.style.display = '';
-            document.getElementById('network-loading-card').style.display = 'none';
-            clearInterval(roadsInterval);
-            clearInterval(congestionInterval);
-            simulationStarted = false;
-            document.getElementById('loading-overlay').style.display = 'flex';
-            loadingCard.style.display = 'block';
-            resetChecklist();
-            const eventSource = new EventSource(`/api/spawn-vehicles?vehicleCount=${encodeURIComponent(vehicleCount)}`);
-            eventSource.onmessage = function(event) {
-                const data = JSON.parse(event.data);
-                if (data.status === 'error') {
-                    eventSource.close();
-                    showChecklistError(data.message);
-                    return;
-                }
-                updateChecklist(data.status, data.message, data.progress);
-                if (data.status === 'done') {
-                    eventSource.close();
-                    setTimeout(() => {
-                        document.getElementById('loading-overlay').style.display = 'none';
-                        document.getElementById('status-light').classList.add('active');
-                        document.getElementById('status-text').textContent = "Simulation Running";
-                        simulationStarted = true;
-                        refresh();
-                        roadsInterval = setInterval(refresh, 1000);
-                        congestionInterval = setInterval(refresh, 500);
-                    }, 800);
-                }
-            };
-            eventSource.onerror = function(err) {
-                console.error("SSE Connection Error:", err);
-                eventSource.close();
-                showChecklistError("Connection to backend server lost or timed out. Please verify the console and try again.");
-            };
+            const vehicleCount = normalizeVehicleCount(hudVehicleCountInput.value, hudVehicleCountInput);
+            if (!confirmLargeFleet(vehicleCount)) return;
+            startVehicleSpawn(vehicleCount, { restartSimulation: true });
         });
         function resetChecklist() {
             stepsList.forEach(s => {
@@ -1284,6 +1217,8 @@
         // Active Simulation Polling & Render Engine (from previous optimizations).
         const targetCongestionMap = new Map();
         const currentCongestionMap = new Map();
+        const lastStyleColorByKey = new Map();
+        const newlyRevealedKeys = new Set();
         // Smoothing factor for congestion interpolation (higher = faster transitions)
         // Increase this value to make transitions snappier. 
         const SMOOTHING_FACTOR = 0.05;
@@ -1295,8 +1230,20 @@
         let cachedDistributionCongestion = [];
         let distributionFilter = 'all';
         const distributionSelect = document.getElementById('distribution-filter-select');
-        function getBBoxParams() {
+        const BBOX_PAD_FRACTION = 0.2;
+        function getPaddedBounds() {
             const b = map.getBounds();
+            const latSpan = b.getNorth() - b.getSouth();
+            const lonSpan = b.getEast() - b.getWest();
+            const padLat = latSpan * BBOX_PAD_FRACTION;
+            const padLon = lonSpan * BBOX_PAD_FRACTION;
+            return L.latLngBounds(
+                [b.getSouth() - padLat, b.getWest() - padLon],
+                [b.getNorth() + padLat, b.getEast() + padLon]
+            );
+        }
+        function getBBoxParams() {
+            const b = getPaddedBounds();
             const z = Math.round(map.getZoom());
             const minLat = b.getSouth().toFixed(5);
             const minLon = b.getWest().toFixed(5);
@@ -1304,10 +1251,43 @@
             const maxLon = b.getEast().toFixed(5);
             return `minLat=${minLat}&minLon=${minLon}&maxLat=${maxLat}&maxLon=${maxLon}&zoom=${z}`;
         }
+        function segmentIntersectsBounds(fromLat, fromLon, toLat, toLon, bounds) {
+            if (bounds.contains(L.latLng(fromLat, fromLon)) || bounds.contains(L.latLng(toLat, toLon))) {
+                return true;
+            }
+            const south = bounds.getSouth();
+            const north = bounds.getNorth();
+            const west = bounds.getWest();
+            const east = bounds.getEast();
+            const edges = [
+                [[south, west], [south, east]],
+                [[north, west], [north, east]],
+                [[south, west], [north, west]],
+                [[south, east], [north, east]],
+            ];
+            for (const [[y1, x1], [y2, x2]] of edges) {
+                if (segmentsIntersect(fromLat, fromLon, toLat, toLon, y1, x1, y2, x2)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        function segmentsIntersect(y1, x1, y2, x2, y3, x3, y4, x4) {
+            const denom = (y1 - y2) * (x3 - x4) - (x1 - x2) * (y3 - y4);
+            if (Math.abs(denom) < 1e-12) return false;
+            const t = ((y1 - y3) * (x3 - x4) - (x1 - x3) * (y3 - y4)) / denom;
+            const u = -((y1 - y2) * (x1 - x3) - (x1 - x2) * (y1 - y3)) / denom;
+            return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+        }
+        const colorCache = new Map();
         function congestionColor(v) {
             const t = Math.min(Math.max(v, 0), 1);
-            const hue = (1 - t) * 120;
-            return `hsl(${hue},90%,45%)`;
+            const bucket = Math.round(t * 200) / 200;
+            if (colorCache.has(bucket)) return colorCache.get(bucket);
+            const hue = (1 - bucket) * 120;
+            const color = `hsl(${hue},90%,45%)`;
+            colorCache.set(bucket, color);
+            return color;
         }
 
         // Canonical key helpers: use higher precision and order endpoints so direction doesn't matter.
@@ -1338,10 +1318,7 @@
                     e.currentTarget.setAttribute('aria-selected','true');
                     if (csLabel) csLabel.textContent = e.currentTarget.textContent;
                     closeCS();
-                    const selectedRoads = distributionFilter === 'major' ? cachedMajorRoads : cachedAllRoads;
-                    if (selectedRoads.length && cachedDistributionCongestion.length) {
-                        drawDistribution(selectedRoads, cachedDistributionCongestion);
-                    }
+                    maybeDrawDistribution();
                 });
             });
             document.addEventListener('click', (e) => {
@@ -1382,7 +1359,7 @@
                 const idx = Math.round(v * (bins - 1));
                 counts[idx]++;
             });
-            const edges = Math.max(totalEdges, counts.reduce((a, b) => a + b, 0));
+            const edges = Math.max(totalEdges, counts.reduce((a, b) => a + b, 0), 1);
             try {
                 const summaryEl = document.getElementById('congestion-stats');
                 if (summaryEl) {
@@ -1426,87 +1403,159 @@
             ctx.stroke();
             ctx.restore();
         }
-        function refresh() {
+        function snapNewlyRevealedCongestion(resolveMissingAsZero) {
+            newlyRevealedKeys.forEach(key => {
+                if (!targetCongestionMap.has(key)) {
+                    if (!resolveMissingAsZero) return;
+                    currentCongestionMap.set(key, 0);
+                } else {
+                    currentCongestionMap.set(key, targetCongestionMap.get(key));
+                }
+                lastStyleColorByKey.delete(key);
+                newlyRevealedKeys.delete(key);
+            });
+        }
+        function applyCongestionUpdate(congestionEMA) {
+            const nextTargetCongestionMap = new Map();
+            congestionEMA.forEach(e => {
+                const key = canonicalSegmentKey(e.from_lat, e.from_lon, e.to_lat, e.to_lon);
+                nextTargetCongestionMap.set(key, e.congestion);
+            });
+            targetCongestionMap.clear();
+            nextTargetCongestionMap.forEach((value, key) => targetCongestionMap.set(key, value));
+            // Snap only newly revealed segments; existing ones keep interpolating toward new targets.
+            snapNewlyRevealedCongestion(true);
+            document.getElementById('stat-time').textContent = new Date().toLocaleTimeString();
+        }
+        function maybeDrawDistribution() {
+            let distributionRoads = distributionFilter === 'major' ? cachedMajorRoads : cachedAllRoads;
+            if (!distributionRoads.length) {
+                distributionRoads = cachedRoads;
+            }
+            if (distributionRoads.length) {
+                drawDistribution(distributionRoads, cachedDistributionCongestion || []);
+            }
+        }
+        function refreshViewport() {
             if (!simulationStarted) return;
             const bboxParams = getBBoxParams();
 
-            fetch(`/roads?${bboxParams}`)
-                .then(r => r.ok ? r.json() : Promise.reject(new Error(`Roads request failed (${r.status})`)))
-                .then(roads => {
+            Promise.all([
+                fetch(`/roads?${bboxParams}`)
+                    .then(r => r.ok ? r.json() : Promise.reject(new Error(`Roads request failed (${r.status})`))),
+                fetch(`/congestion?${bboxParams}`)
+                    .then(r => r.ok ? r.json() : Promise.reject(new Error(`Congestion request failed (${r.status})`)))
+            ])
+                .then(([roads, congestionEMA]) => {
+                    applyCongestionUpdate(congestionEMA);
                     cachedRoads = roads;
+                    roadsDataVersion++;
                 })
                 .catch(err => {
-                    console.error("Roads refresh failed:", err);
+                    console.error("Viewport refresh failed:", err);
                 });
+        }
 
-            fetch(`/congestion?${bboxParams}`)
-                .then(r => r.ok ? r.json() : Promise.reject(new Error(`Congestion request failed (${r.status})`)))
-                .then(congestionEMA => {
-                            const nextTargetCongestionMap = new Map();
-                            congestionEMA.forEach(e => {
-                                const key = canonicalSegmentKey(e.from_lat, e.from_lon, e.to_lat, e.to_lon);
-                                const targetVal = e.congestion;
-                                nextTargetCongestionMap.set(key, targetVal);
-                                // If this is the first time seeing a road with EMA data, initialize displayed value
-                                // to the target (not 0) so it appears at correct congestion immediately,
-                                // then animates smoothly as EMA changes over time.
-                                if (!currentCongestionMap.has(key)) {
-                                    currentCongestionMap.set(key, targetVal);
-                                }
-                            });
-                    targetCongestionMap.clear();
-                    nextTargetCongestionMap.forEach((value, key) => targetCongestionMap.set(key, value));
-                    document.getElementById('stat-time').textContent = new Date().toLocaleTimeString();
-                })
-                .catch(err => {
-                    console.error("Congestion refresh failed:", err);
-                });
+        function refreshGlobal() {
+            if (!simulationStarted) return;
 
             fetch(`/congestion?minLat=-90&minLon=-180&maxLat=90&maxLon=180`)
                 .then(r => r.ok ? r.json() : Promise.reject(new Error(`Global congestion request failed (${r.status})`)))
                 .then(allCongestion => {
                     cachedDistributionCongestion = allCongestion;
-                    const distributionRoads = distributionFilter === 'major' ? cachedMajorRoads : cachedAllRoads;
-                    if (distributionRoads.length) {
-                        drawDistribution(distributionRoads, cachedDistributionCongestion);
-                    }
+                    maybeDrawDistribution();
                 })
                 .catch(err => {
                     console.error("Distribution congestion fetch failed:", err);
                 });
 
-            fetch(`/roads?minLat=-90&minLon=-180&maxLat=90&maxLon=180&zoom=20`)
-                .then(r => r.ok ? r.json() : Promise.reject(new Error(`All roads request failed (${r.status})`)))
-                .then(allRoads => {
+            Promise.all([
+                fetch(`/roads?minLat=-90&minLon=-180&maxLat=90&maxLon=180&zoom=20`)
+                    .then(r => r.ok ? r.json() : Promise.reject(new Error(`All roads request failed (${r.status})`))),
+                fetch(`/roads?minLat=-90&minLon=-180&maxLat=90&maxLon=180&zoom=8`)
+                    .then(r => r.ok ? r.json() : Promise.reject(new Error(`Major roads request failed (${r.status})`)))
+            ])
+                .then(([allRoads, majorRoads]) => {
                     cachedAllRoads = allRoads;
-                    const distributionRoads = distributionFilter === 'major' ? cachedMajorRoads : cachedAllRoads;
-                    if (cachedDistributionCongestion.length && distributionRoads.length) {
-                        drawDistribution(distributionRoads, cachedDistributionCongestion);
-                    }
-                })
-                .catch(err => {
-                    console.error("All roads fetch failed:", err);
-                });
-
-            fetch(`/roads?minLat=-90&minLon=-180&maxLat=90&maxLon=180&zoom=8`)
-                .then(r => r.ok ? r.json() : Promise.reject(new Error(`Major roads request failed (${r.status})`)))
-                .then(majorRoads => {
                     cachedMajorRoads = majorRoads;
-                    const distributionRoads = distributionFilter === 'major' ? cachedMajorRoads : cachedAllRoads;
-                    if (cachedDistributionCongestion.length && distributionRoads.length) {
-                        drawDistribution(distributionRoads, cachedDistributionCongestion);
-                    }
+                    maybeDrawDistribution();
                 })
                 .catch(err => {
-                    console.error("Major roads fetch failed:", err);
+                    console.error("Global roads refresh failed:", err);
                 });
         }
         // 60FPS animation ticker — EMA drives color updates via setStyle each frame.
+        const layerByKey = new Map();
+        let lastViewKey = '';
+        let lastRoadsVersion = -1;
+        let roadsDataVersion = 0;
+        let cachedVisibleFeatures = [];
         funcAnimTicker();
+        function getViewKey() {
+            return map.getZoom() + '|' + getPaddedBounds().toBBoxString();
+        }
+        function buildVisibleFeatures(currentZoom, visibleBounds) {
+            const renderRoads = (currentZoom >= 12 || cachedMajorRoads.length === 0) ? cachedRoads : cachedMajorRoads;
+            const visibleFeatures = [];
+            renderRoads.forEach(seg => {
+                const fromLat = seg[0], fromLon = seg[1], toLat = seg[2], toLon = seg[3];
+                if (segmentIntersectsBounds(fromLat, fromLon, toLat, toLon, visibleBounds)) {
+                    const key = canonicalSegmentKey(fromLat, fromLon, toLat, toLon);
+                    visibleFeatures.push({ key, fromLat, fromLon, toLat, toLon });
+                }
+            });
+            return visibleFeatures;
+        }
+        function syncRoadLayers(visibleFeatures) {
+            const visibleKeys = new Set(visibleFeatures.map(f => f.key));
+            for (const [key, layer] of layerByKey) {
+                if (!visibleKeys.has(key)) {
+                    roadLayer.removeLayer(layer);
+                    layerByKey.delete(key);
+                    lastStyleColorByKey.delete(key);
+                    newlyRevealedKeys.delete(key);
+                }
+            }
+            visibleFeatures.forEach(({ key, fromLat, fromLon, toLat, toLon }) => {
+                if (!layerByKey.has(key)) {
+                    newlyRevealedKeys.add(key);
+                    if (!currentCongestionMap.has(key)) {
+                        const targetVal = targetCongestionMap.has(key) ? targetCongestionMap.get(key) : 0;
+                        currentCongestionMap.set(key, targetVal);
+                    }
+                    const congestionVal = currentCongestionMap.get(key);
+                    const layer = L.geoJSON({
+                        type: 'Feature',
+                        geometry: { type: 'LineString', coordinates: [[fromLon, fromLat], [toLon, toLat]] },
+                        properties: { segmentKey: key }
+                    }, {
+                        renderer: customCanvasRenderer,
+                        style: {
+                            color: congestionColor(congestionVal),
+                            weight: 2.0,
+                            opacity: 0.85,
+                            lineCap: 'round',
+                            lineJoin: 'round'
+                        },
+                        interactive: false
+                    });
+                    roadLayer.addLayer(layer);
+                    layerByKey.set(key, layer);
+                    lastStyleColorByKey.set(key, congestionColor(congestionVal));
+                }
+            });
+            snapNewlyRevealedCongestion(false);
+        }
         function funcAnimTicker() {
             if (simulationStarted && cachedRoads.length > 0) {
-                const currentZoom = map.getZoom();
-                const currentBounds = map.getBounds();
+                const viewKey = getViewKey();
+                const viewChanged = viewKey !== lastViewKey;
+                const roadsChanged = roadsDataVersion !== lastRoadsVersion;
+                if (viewChanged || roadsChanged) {
+                    lastViewKey = viewKey;
+                    lastRoadsVersion = roadsDataVersion;
+                    cachedVisibleFeatures = buildVisibleFeatures(map.getZoom(), getPaddedBounds());
+                }
 
                 // Step the EMA one tick toward targets
                 currentCongestionMap.forEach((currentVal, key) => {
@@ -1519,74 +1568,25 @@
                     }
                 });
 
-                // Determine which roads should be visible at this zoom level
-                const renderRoads = (currentZoom >= 12 || cachedMajorRoads.length === 0) ? cachedRoads : cachedMajorRoads;
+                if (!roadLayer) {
+                    roadLayer = L.featureGroup().addTo(map);
+                    cachedVisibleFeatures = buildVisibleFeatures(map.getZoom(), getPaddedBounds());
+                    lastViewKey = viewKey;
+                    lastRoadsVersion = roadsDataVersion;
+                    syncRoadLayers(cachedVisibleFeatures);
+                } else if (viewChanged || roadsChanged) {
+                    syncRoadLayers(cachedVisibleFeatures);
+                }
 
-                // Build the set of features that should be visible (bounds-filtered)
-                const visibleFeatures = [];
-                renderRoads.forEach(seg => {
-                    const fromLat = seg[0], fromLon = seg[1], toLat = seg[2], toLon = seg[3];
-                    if (currentBounds.contains(L.latLng(fromLat, fromLon)) || currentBounds.contains(L.latLng(toLat, toLon))) {
-                        const key = canonicalSegmentKey(fromLat, fromLon, toLat, toLon);
-                        visibleFeatures.push({ key, fromLat, fromLon, toLat, toLon });
+                cachedVisibleFeatures.forEach(({ key }) => {
+                    const layer = layerByKey.get(key);
+                    if (!layer) return;
+                    const color = congestionColor(currentCongestionMap.get(key) || 0);
+                    if (lastStyleColorByKey.get(key) !== color) {
+                        layer.setStyle({ color });
+                        lastStyleColorByKey.set(key, color);
                     }
                 });
-
-                if (!roadLayer) {
-                    // First creation — build the layer from scratch
-                    const fc = {
-                        type: 'FeatureCollection',
-                        features: visibleFeatures.map(({ key, fromLat, fromLon, toLat, toLon }) => ({
-                            type: 'Feature',
-                            geometry: { type: 'LineString', coordinates: [[fromLon, fromLat], [toLon, toLat]] },
-                            properties: { segmentKey: key }
-                        }))
-                    };
-                    roadLayer = L.geoJSON(fc, {
-                        renderer: customCanvasRenderer,
-                        style: f => ({
-                            color: congestionColor(currentCongestionMap.get(f.properties.segmentKey) || 0),
-                            weight: 2.0,
-                            opacity: 0.85,
-                            lineCap: 'round',
-                            lineJoin: 'round'
-                        }),
-                        interactive: false
-                    }).addTo(map);
-                } else {
-                    // Sync which roads are shown (only changes on zoom/pan)
-                    const visibleKeys = new Set(visibleFeatures.map(f => f.key));
-
-                    // Remove roads that left the view
-                    const toRemove = [];
-                    roadLayer.eachLayer(l => {
-                        const key = l.feature && l.feature.properties && l.feature.properties.segmentKey;
-                        if (key && !visibleKeys.has(key)) toRemove.push(l);
-                    });
-                    toRemove.forEach(l => roadLayer.removeLayer(l));
-
-                    // Build lookup of what's still in the layer
-                    const existingMap = new Map();
-                    roadLayer.eachLayer(l => {
-                        const key = l.feature && l.feature.properties && l.feature.properties.segmentKey;
-                        if (key) existingMap.set(key, l);
-                    });
-
-                    // Add new roads; update colors on existing roads via EMA
-                    visibleFeatures.forEach(({ key, fromLat, fromLon, toLat, toLon }) => {
-                        const existing = existingMap.get(key);
-                        if (existing) {
-                            // EMA-driven color update — this is what makes it smooth
-                            existing.setStyle({ color: congestionColor(currentCongestionMap.get(key) || 0) });
-                        } else {
-                            roadLayer.addData({
-                                type: 'Feature',
-                                geometry: { type: 'LineString', coordinates: [[fromLon, fromLat], [toLon, toLat]] },
-                                properties: { segmentKey: key }
-                            });
-                        }
-                    });
-                }
             }
             requestAnimationFrame(funcAnimTicker);
         }
@@ -1595,7 +1595,9 @@
         map.on('moveend zoomend', () => {
             if (!simulationStarted) return;
             clearTimeout(moveTimer);
-            moveTimer = setTimeout(refresh, 300);
+            moveTimer = setTimeout(() => {
+                refreshViewport();
+            }, 300);
         });
         // Traffic Aware toggle.
         document.getElementById('traffic-aware-toggle').addEventListener('change', (e) => {
@@ -1609,14 +1611,21 @@
         // Reset to Map selection mode button.
         document.getElementById('btn-reset').addEventListener('click', () => {
             // Stop intervals.
-            clearInterval(roadsInterval);
-            clearInterval(congestionInterval);
+            clearInterval(refreshInterval);
+            clearInterval(globalRefreshInterval);
             simulationStarted = false;
             // Clean up layer.
             if (roadLayer) {
                 map.removeLayer(roadLayer);
                 roadLayer = null;
             }
+            layerByKey.clear();
+            lastStyleColorByKey.clear();
+            newlyRevealedKeys.clear();
+            lastViewKey = '';
+            lastRoadsVersion = -1;
+            roadsDataVersion = 0;
+            cachedVisibleFeatures = [];
             cachedRoads = [];
             targetCongestionMap.clear();
             currentCongestionMap.clear();

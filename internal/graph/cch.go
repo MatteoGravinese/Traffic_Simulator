@@ -7,6 +7,43 @@ import (
 	"math"
 )
 
+// Item represents a node in the priority queue.
+type Item struct {
+	nodeID int64
+	time   float64
+	index  int
+}
+
+// PriorityQueue implements heap.Interface.
+type PriorityQueue []*Item
+
+func (pq PriorityQueue) Len() int {
+	return len(pq)
+}
+
+func (pq PriorityQueue) Less(i, j int) bool {
+	return pq[i].time < pq[j].time
+}
+
+func (pq PriorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+	pq[i].index = i
+	pq[j].index = j
+}
+
+func (pq *PriorityQueue) Push(x interface{}) {
+	item := x.(*Item)
+	item.index = len(*pq)
+	*pq = append(*pq, item)
+}
+
+func (pq *PriorityQueue) Pop() interface{} {
+	old := *pq
+	item := old[len(old)-1]
+	*pq = old[:len(old)-1]
+	return item
+}
+
 // CCHEdge represents an edge (original or shortcut) in the CCH graph.
 type CCHEdge struct {
 	From             int64
@@ -255,131 +292,140 @@ func (cch *CCHGraph) Customize(congestion map[int64]map[int64]float64) {
 
 // CCHQuery finds the shortest path between startID and endID using CCH ranks.
 func CCHQuery(cch *CCHGraph, startID, endID int64) ([]int64, float64, error) {
-    // Ensure forward search starts from the lower‑rank node.
-    swapped := false // Do not swap start/end based on rank; pathfinding must respect original direction
-    if startID == endID {
-        return []int64{startID}, 0, nil
-    }
-    forwardTime := make(map[int64]float64)
-    backwardTime := make(map[int64]float64)
-    forwardPrev := make(map[int64]int64)
-    backwardPrev := make(map[int64]int64)
-    forwardVisited := make(map[int64]bool)
-    backwardVisited := make(map[int64]bool)
-    forwardTime[startID] = 0
-    backwardTime[endID] = 0
-    forwardPQ := &PriorityQueue{{nodeID: startID, time: 0}}
-    backwardPQ := &PriorityQueue{{nodeID: endID, time: 0}}
-    heap.Init(forwardPQ)
-    heap.Init(backwardPQ)
-    bestTime := math.Inf(1)
-    meetingNode := int64(-1)
-    for forwardPQ.Len() > 0 || backwardPQ.Len() > 0 {
-        // Forward step
-        if forwardPQ.Len() > 0 {
-            curr := heap.Pop(forwardPQ).(*Item)
-            u := curr.nodeID
-            if curr.time >= bestTime {
-                forwardPQ = &PriorityQueue{}
-            } else if !forwardVisited[u] {
-                forwardVisited[u] = true
-                if backwardVisited[u] {
-                    combined := forwardTime[u] + backwardTime[u]
-                    if combined < bestTime {
-                        bestTime = combined
-                        meetingNode = u
-                    }
-                }
-                for _, edge := range cch.Edges[u] {
-                    v := edge.To
-                    weight := edge.CustomizedWeight
-                    if weight == math.MaxFloat64 {
-                        weight = edge.OriginalTime
-                    }
-                    if weight == math.MaxFloat64 {
-                        continue
-                    }
-                    newTime := forwardTime[u] + weight
-                    if existing, ok := forwardTime[v]; !ok || newTime < existing {
-                        forwardTime[v] = newTime
-                        forwardPrev[v] = u
-                        if bTime, reached := backwardTime[v]; reached && newTime+bTime < bestTime {
-                            bestTime = newTime + bTime
-                            meetingNode = v
-                        }
-                        heap.Push(forwardPQ, &Item{nodeID: v, time: newTime})
-                    }
-                }
-            }
-        }
-        // Backward step
-        if backwardPQ.Len() > 0 {
-            curr := heap.Pop(backwardPQ).(*Item)
-            v := curr.nodeID
-            if curr.time >= bestTime {
-                backwardPQ = &PriorityQueue{}
-            } else if !backwardVisited[v] {
-                backwardVisited[v] = true
-                if forwardVisited[v] {
-                    combined := forwardTime[v] + backwardTime[v]
-                    if combined < bestTime {
-                        bestTime = combined
-                        meetingNode = v
-                    }
-                }
-                for _, edge := range cch.InEdges[v] {
-                    u := edge.From
-                    weight := edge.CustomizedWeight
-                    if weight == math.MaxFloat64 {
-                        weight = edge.OriginalTime
-                    }
-                    if weight == math.MaxFloat64 {
-                        continue
-                    }
-                    newTime := backwardTime[v] + weight
-                    if existing, ok := backwardTime[u]; !ok || newTime < existing {
-                        backwardTime[u] = newTime
-                        backwardPrev[u] = v
-                        if fTime, reached := forwardTime[u]; reached && fTime+newTime < bestTime {
-                            bestTime = fTime + newTime
-                            meetingNode = u
-                        }
-                        heap.Push(backwardPQ, &Item{nodeID: u, time: newTime})
-                    }
-                }
-            }
-        }
-    }
-    if meetingNode == -1 || math.IsInf(bestTime, 1) {
-        return nil, 0, errors.New("no path found")
-    }
-    path, err := CCHunpackPath(cch, forwardPrev, backwardPrev, startID, endID, meetingNode)
-    if err != nil {
-        return nil, 0, err
-    }
-    if swapped {
-        // Reverse the path to match the original request direction.
-        for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
-            path[i], path[j] = path[j], path[i]
-        }
-    }
-    return path, bestTime, nil
-// duplicate CCHQuery block removedl
+	// Ensure forward search starts from the lower‑rank node.
+	swapped := false // Do not swap start/end based on rank; pathfinding must respect original direction
+	if startID == endID {
+		return []int64{startID}, 0, nil
+	}
+	forwardTime := make(map[int64]float64)
+	backwardTime := make(map[int64]float64)
+	forwardPrev := make(map[int64]int64)
+	backwardPrev := make(map[int64]int64)
+	forwardVisited := make(map[int64]bool)
+	backwardVisited := make(map[int64]bool)
+	forwardTime[startID] = 0
+	backwardTime[endID] = 0
+	forwardPQ := &PriorityQueue{{nodeID: startID, time: 0}}
+	backwardPQ := &PriorityQueue{{nodeID: endID, time: 0}}
+	heap.Init(forwardPQ)
+	heap.Init(backwardPQ)
+	bestTime := math.Inf(1)
+	meetingNode := int64(-1)
+	for forwardPQ.Len() > 0 || backwardPQ.Len() > 0 {
+		// Forward step
+		if forwardPQ.Len() > 0 {
+			curr := heap.Pop(forwardPQ).(*Item)
+			u := curr.nodeID
+			if curr.time >= bestTime {
+				forwardPQ = &PriorityQueue{}
+			} else if !forwardVisited[u] {
+				forwardVisited[u] = true
+				if backwardVisited[u] {
+					combined := forwardTime[u] + backwardTime[u]
+					if combined < bestTime {
+						bestTime = combined
+						meetingNode = u
+					}
+				}
+				for _, edge := range cch.Edges[u] {
+					v := edge.To
+					if cch.Ranks[v] <= cch.Ranks[u] {
+						continue
+					}
+					weight := edge.CustomizedWeight
+					if weight == math.MaxFloat64 {
+						weight = edge.OriginalTime
+					}
+					if weight == math.MaxFloat64 {
+						continue
+					}
+					newTime := forwardTime[u] + weight
+					if existing, ok := forwardTime[v]; !ok || newTime < existing {
+						forwardTime[v] = newTime
+						forwardPrev[v] = u
+						if bTime, reached := backwardTime[v]; reached && newTime+bTime < bestTime {
+							bestTime = newTime + bTime
+							meetingNode = v
+						}
+						heap.Push(forwardPQ, &Item{nodeID: v, time: newTime})
+					}
+				}
+			}
+		}
+		// Backward step
+		if backwardPQ.Len() > 0 {
+			curr := heap.Pop(backwardPQ).(*Item)
+			v := curr.nodeID
+			if curr.time >= bestTime {
+				backwardPQ = &PriorityQueue{}
+			} else if !backwardVisited[v] {
+				backwardVisited[v] = true
+				if forwardVisited[v] {
+					combined := forwardTime[v] + backwardTime[v]
+					if combined < bestTime {
+						bestTime = combined
+						meetingNode = v
+					}
+				}
+				for _, edge := range cch.InEdges[v] {
+					u := edge.From
+					if cch.Ranks[u] <= cch.Ranks[v] {
+						continue
+					}
+					weight := edge.CustomizedWeight
+					if weight == math.MaxFloat64 {
+						weight = edge.OriginalTime
+					}
+					if weight == math.MaxFloat64 {
+						continue
+					}
+					newTime := backwardTime[v] + weight
+					if existing, ok := backwardTime[u]; !ok || newTime < existing {
+						backwardTime[u] = newTime
+						backwardPrev[u] = v
+						if fTime, reached := forwardTime[u]; reached && fTime+newTime < bestTime {
+							bestTime = fTime + newTime
+							meetingNode = u
+						}
+						heap.Push(backwardPQ, &Item{nodeID: u, time: newTime})
+					}
+				}
+			}
+		}
+	}
+	if meetingNode == -1 || math.IsInf(bestTime, 1) {
+		return nil, 0, errors.New("no path found")
+	}
+	path, err := CCHunpackPath(cch, forwardPrev, backwardPrev, startID, endID, meetingNode)
+	if err != nil {
+		return nil, 0, err
+	}
+	if swapped {
+		// Reverse the path to match the original request direction.
+		for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
+			path[i], path[j] = path[j], path[i]
+		}
+	}
+	return path, bestTime, nil
 }
 
 // unpackPath reconstructs the original path nodes.
 func CCHunpackPath(cch *CCHGraph, forwardPrev, backwardPrev map[int64]int64, startID, endID, meetingNode int64) ([]int64, error) {
-	forwardPath := make([]int64, 0)
+	reverseForward := make([]int64, 0, 16)
 	current := meetingNode
 	for current != startID {
-		forwardPath = append([]int64{current}, forwardPath...)
+		reverseForward = append(reverseForward, current)
 		parent, ok := forwardPrev[current]
 		if !ok {
 			return nil, fmt.Errorf("no forward parent for node %d", current)
 		}
 		current = parent
 	}
-	forwardPath = append([]int64{startID}, forwardPath...)
+	forwardPath := make([]int64, len(reverseForward)+1)
+	forwardPath[0] = startID
+	for i, node := range reverseForward {
+		forwardPath[len(reverseForward)-i] = node
+	}
 	backwardPath := make([]int64, 0)
 	current = meetingNode
 	for current != endID {

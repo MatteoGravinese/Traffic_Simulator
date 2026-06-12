@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/MatteoGravinese/Traffic_Simulator/internal/graph"
-	"github.com/redis/go-redis/v9"
 )
 
 type Vehicle struct {
@@ -26,9 +25,9 @@ type SimState struct {
 	Vehicles       []*Vehicle
 	Congestion     map[int64]map[int64]float64 //edge congestion: from -> to -> count.
 	CongestionEMA  map[int64]map[int64]float64
-	EdgePriorities map[int64]map[int64]int // fromID -> toID -> priority
+	EdgePriorities map[int64]map[int64]int    // fromID -> toID -> priority
+	EdgeLookup     map[int64]map[int64]graph.Edge // fromID -> toID -> edge (O(1) lookup)
 	mu             sync.RWMutex
-	RDB            *redis.Client
 	NodeIDs        []int64 //cached list of all node IDs for random selection.
 	TrafficAware   bool
 }
@@ -56,7 +55,7 @@ func (s *SimState) RLock()   { s.mu.RLock() }
 func (s *SimState) RUnlock() { s.mu.RUnlock() }
 
 // NewSimState creates a new simulation state.
-func NewSimState(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCHGraph, rdb *redis.Client) *SimState {
+func NewSimState(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCHGraph) *SimState {
 	state := &SimState{
 		G:              g,
 		CH:             ch,
@@ -65,30 +64,38 @@ func NewSimState(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCHGraph, rdb *re
 		Congestion:     make(map[int64]map[int64]float64),
 		CongestionEMA:  make(map[int64]map[int64]float64),
 		EdgePriorities: make(map[int64]map[int64]int),
-		RDB:            rdb,
+		EdgeLookup:     make(map[int64]map[int64]graph.Edge),
 	}
 	if g != nil {
-		nodeIDs := make([]int64, 0, len(g.Nodes))
-		for id := range g.Nodes {
-			nodeIDs = append(nodeIDs, id)
-		}
-		state.NodeIDs = nodeIDs
-		for fromID, edges := range g.Edges {
-			state.EdgePriorities[fromID] = make(map[int64]int)
-			for _, edge := range edges {
-				priority := 6
-				if p, ok := HighwayPriority[edge.Highway]; ok {
-					priority = p
-				}
-				state.EdgePriorities[fromID][edge.To] = priority
-			}
-		}
+		state.NodeIDs, state.EdgePriorities, state.EdgeLookup = buildGraphIndexes(g)
 	}
 	return state
 }
 
-// UpdateGraph thread-safely swaps the road network graph and hierarchy structures, and spawns new vehicles.
-func (s *SimState) UpdateGraph(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCHGraph, vehiclesPerEdge float64, progress func(float64)) {
+func buildGraphIndexes(g *graph.Graph) ([]int64, map[int64]map[int64]int, map[int64]map[int64]graph.Edge) {
+	nodeIDs := make([]int64, 0, len(g.Nodes))
+	for id := range g.Nodes {
+		nodeIDs = append(nodeIDs, id)
+	}
+	edgePriorities := make(map[int64]map[int64]int)
+	edgeLookup := make(map[int64]map[int64]graph.Edge)
+	for fromID, edges := range g.Edges {
+		edgePriorities[fromID] = make(map[int64]int)
+		edgeLookup[fromID] = make(map[int64]graph.Edge)
+		for _, edge := range edges {
+			priority := 6
+			if p, ok := HighwayPriority[edge.Highway]; ok {
+				priority = p
+			}
+			edgePriorities[fromID][edge.To] = priority
+			edgeLookup[fromID][edge.To] = edge
+		}
+	}
+	return nodeIDs, edgePriorities, edgeLookup
+}
+
+// UpdateGraph thread-safely swaps the road network graph and hierarchy structures.
+func (s *SimState) UpdateGraph(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCHGraph, progress func(float64)) {
 	s.mu.Lock()
 	s.G = g
 	s.CH = ch
@@ -96,57 +103,11 @@ func (s *SimState) UpdateGraph(g *graph.Graph, ch *graph.CHGraph, cch *graph.CCH
 	s.Vehicles = make([]*Vehicle, 0)
 	s.Congestion = make(map[int64]map[int64]float64)
 	s.CongestionEMA = make(map[int64]map[int64]float64)
-	s.EdgePriorities = make(map[int64]map[int64]int)
-	nodeIDs := make([]int64, 0, len(g.Nodes))
-	for id := range g.Nodes {
-		nodeIDs = append(nodeIDs, id)
-	}
+	nodeIDs, edgePriorities, edgeLookup := buildGraphIndexes(g)
 	s.NodeIDs = nodeIDs
-	for fromID, edges := range g.Edges {
-		s.EdgePriorities[fromID] = make(map[int64]int)
-		for _, edge := range edges {
-			priority := 6
-			if p, ok := HighwayPriority[edge.Highway]; ok {
-				priority = p
-			}
-			s.EdgePriorities[fromID][edge.To] = priority
-		}
-	}
+	s.EdgePriorities = edgePriorities
+	s.EdgeLookup = edgeLookup
 	s.mu.Unlock()
-	// Spawn new vehicles on the new graph.
-	edgeCount := 0
-	for _, edges := range g.Edges {
-		edgeCount += len(edges)
-	}
-	numVehicles := 0
-	if vehiclesPerEdge > 0 {
-		numVehicles = int(math.Round(float64(edgeCount) * vehiclesPerEdge))
-		if numVehicles < 0 {
-			numVehicles = 0
-		}
-	}
-	spawned := make([]*Vehicle, 0, numVehicles)
-	if len(nodeIDs) > 1 && numVehicles > 0 {
-		updateInterval := numVehicles / 200
-		if updateInterval < 1 {
-			updateInterval = 1
-		}
-		if updateInterval > 500 {
-			updateInterval = 500
-		}
-		for i := 0; i < numVehicles; i++ {
-			spawned = append(spawned, SpawnVehicle(s, i))
-			if progress != nil && ((i+1)%updateInterval == 0 || i == numVehicles-1) {
-				progress(float64(i+1) / float64(numVehicles))
-			}
-		}
-	}
-	s.mu.Lock()
-	s.Vehicles = spawned
-	s.mu.Unlock()
-	if progress != nil {
-		progress(1.0)
-	}
 	if progress != nil {
 		progress(1.0)
 	}
@@ -202,7 +163,6 @@ func SpawnVehicle(state *SimState, id int) *Vehicle {
 	if len(state.NodeIDs) < 2 {
 		return &Vehicle{ID: id}
 	}
-	// Keep trying a limited number of routes to avoid blocking indefinitely.
 	maxAttempts := 50
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		startID = state.NodeIDs[rand.Intn(len(state.NodeIDs))]
@@ -250,7 +210,8 @@ func Tick(state *SimState, tickInterval float64, tickCount int) {
 			bandCount = 1
 		}
 		band := tickCount % bandCount
-		state.CCH.Customize(state.Congestion)
+		// Route on smoothed EMA to avoid oscillation from raw per-tick density spikes.
+		state.CCH.Customize(state.CongestionEMA)
 		for i, vehicle := range vehicles {
 			if len(vehicle.Path) < 2 || vehicle.CurrentIndex >= len(vehicle.Path)-1 {
 				continue
@@ -264,60 +225,37 @@ func Tick(state *SimState, tickInterval float64, tickCount int) {
 		}
 	}
 	//Iterate through all vehicles to move them.
-	var finishedIndices []int
+	finishedIndices := make([]int, 0, len(vehicles)/10)
 	for i, vehicle := range vehicles {
 		if len(vehicle.Path) < 2 || vehicle.CurrentIndex >= len(vehicle.Path)-1 {
 			finishedIndices = append(finishedIndices, i)
 			continue
 		}
-		curr_node := vehicle.Path[vehicle.CurrentIndex]
-		next_node := vehicle.Path[vehicle.CurrentIndex+1]
-		var firstEdge graph.Edge
-		found := false
-		// Find the destination node.
-		for _, edge := range state.G.Edges[curr_node] {
-			if edge.To == next_node {
-				firstEdge = edge
-				found = true
-				break
-			}
-		}
-		if !found {
-			finishedIndices = append(finishedIndices, i)
-			continue
-		}
-		// Distance travelled.
-		remaining := tickInterval * firstEdge.Speed / 3600
-		// If we pass through an intersection, see how far down the next road we go.
-		// If we go past more than one intersection, see how far we'll end up overall.
-		for remaining > 0 && vehicle.CurrentIndex < len(vehicle.Path)-1 {
+		timeRemaining := tickInterval
+		for timeRemaining > 0 && vehicle.CurrentIndex < len(vehicle.Path)-1 {
 			curr_node := vehicle.Path[vehicle.CurrentIndex]
 			next_node := vehicle.Path[vehicle.CurrentIndex+1]
-			var curr_edge graph.Edge
-			foundEdge := false
-			for _, edge := range state.G.Edges[curr_node] {
-				if edge.To == next_node {
-					curr_edge = edge
-					foundEdge = true
-					break
-				}
-			}
+			curr_edge, foundEdge := lookupEdge(state, curr_node, next_node)
 			if !foundEdge {
 				vehicle.CurrentIndex = len(vehicle.Path) - 1
 				break
 			}
+			speed := effectiveSpeed(curr_edge.Speed, curr_node, next_node, state.Congestion)
+			if speed <= 0 {
+				break
+			}
 			distToNext := curr_edge.Distance - vehicle.DistanceTravelled
-			if remaining >= distToNext {
-				remaining -= distToNext
+			distThisTick := speed * timeRemaining / 3600
+			if distThisTick >= distToNext {
+				timeRemaining -= distToNext * 3600 / speed
 				vehicle.DistanceTravelled = 0
 				vehicle.CurrentIndex++
-				// If the vehicle has reached its destination, exit loop.
 				if vehicle.CurrentIndex >= len(vehicle.Path)-1 {
 					break
 				}
 			} else {
-				vehicle.DistanceTravelled += remaining
-				remaining = 0
+				vehicle.DistanceTravelled += distThisTick
+				timeRemaining = 0
 			}
 		}
 		if vehicle.CurrentIndex >= len(vehicle.Path)-1 {
@@ -342,11 +280,44 @@ func Tick(state *SimState, tickInterval float64, tickCount int) {
 	}
 }
 
+// effectiveSpeed returns the congestion-adjusted speed for an edge.
+// Uses the same 1x–4x travel-time curve as CCH routing: speed / (1 + 3*density).
+func effectiveSpeed(baseSpeed float64, fromID, toID int64, congestion map[int64]map[int64]float64) float64 {
+	density := 0.0
+	if toMap, ok := congestion[fromID]; ok {
+		if d, ok := toMap[toID]; ok {
+			density = d
+		}
+	}
+	return baseSpeed / (1.0 + 3.0*density)
+}
+
+func lookupEdge(state *SimState, fromID, toID int64) (graph.Edge, bool) {
+	if toMap, ok := state.EdgeLookup[fromID]; ok {
+		if edge, ok := toMap[toID]; ok {
+			return edge, true
+		}
+	}
+	return graph.Edge{}, false
+}
+
+func clearNestedFloatMap(m map[int64]map[int64]float64) {
+	for fromID, toMap := range m {
+		for toID := range toMap {
+			delete(toMap, toID)
+		}
+		delete(m, fromID)
+	}
+}
+
 func updateCongestion(state *SimState, vehicles []*Vehicle) {
-	// 1. Clear the current snapshot map completely to handle live positional counts
-	state.Congestion = make(map[int64]map[int64]float64)
+	// 1. Clear the current snapshot map in place to avoid per-tick allocations.
+	clearNestedFloatMap(state.Congestion)
 	total_cars := make(map[int64]map[int64]int)
 	for _, vehicle := range vehicles {
+		if len(vehicle.Path) < 2 || vehicle.CurrentIndex >= len(vehicle.Path)-1 {
+			continue
+		}
 		curr_node := vehicle.Path[vehicle.CurrentIndex]
 		next_node := vehicle.Path[vehicle.CurrentIndex+1]
 		if total_cars[curr_node] == nil {
@@ -360,15 +331,12 @@ func updateCongestion(state *SimState, vehicles []*Vehicle) {
 	// 2. Compute current raw snapshot density metrics.
 	for node_from := range total_cars {
 		for node_to, cars := range total_cars[node_from] {
-			var street_length float64
-			var lane_number float64
-			for _, edge := range state.G.Edges[node_from] {
-				if edge.To == node_to {
-					street_length = edge.Distance
-					lane_number = float64(edge.Lanes)
-					break
-				}
+			edge, ok := lookupEdge(state, node_from, node_to)
+			if !ok {
+				continue
 			}
+			street_length := edge.Distance
+			lane_number := float64(edge.Lanes)
 			if state.Congestion[node_from] == nil {
 				state.Congestion[node_from] = make(map[int64]float64)
 			}

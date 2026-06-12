@@ -5,43 +5,6 @@ import (
 	"errors"
 )
 
-// Item represents a node in the priority queue.
-type Item struct {
-	nodeID int64
-	time   float64
-	index  int
-}
-
-// PriorityQueue implements heap.Interface.
-type PriorityQueue []*Item
-
-func (pq PriorityQueue) Len() int {
-	return len(pq)
-}
-
-func (pq PriorityQueue) Less(i, j int) bool {
-	return pq[i].time < pq[j].time
-}
-
-func (pq PriorityQueue) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].index = i
-	pq[j].index = j
-}
-
-func (pq *PriorityQueue) Push(x interface{}) {
-	item := x.(*Item)
-	item.index = len(*pq)
-	*pq = append(*pq, item)
-}
-
-func (pq *PriorityQueue) Pop() interface{} {
-	old := *pq
-	item := old[len(old)-1]
-	*pq = old[:len(old)-1]
-	return item
-}
-
 // Dijkstra finds the shortest path between two nodes.
 func Dijkstra(g *Graph, startID int64, endID int64) ([]int64, float64, error) {
 	//Tracks the shortest known time to every node.

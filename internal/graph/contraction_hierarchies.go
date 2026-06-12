@@ -367,17 +367,21 @@ func CHQuery(ch *CHGraph, startID int64, endID int64) ([]int64, float64, error) 
 
 // unpackPath reconstructs the full path by recursively unpacking shortcuts.
 func unpackPath(ch *CHGraph, forwardPrev map[int64]int64, backwardPrev map[int64]int64, startID int64, endID int64, meetingNode int64) ([]int64, error) {
-	forwardPath := []int64{}
+	reverseForward := make([]int64, 0, 16)
 	current := meetingNode
 	for current != startID {
-		forwardPath = append([]int64{current}, forwardPath...)
+		reverseForward = append(reverseForward, current)
 		parent, ok := forwardPrev[current]
 		if !ok {
 			return nil, fmt.Errorf("no forward parent for node %d", current)
 		}
 		current = parent
 	}
-	forwardPath = append([]int64{startID}, forwardPath...)
+	forwardPath := make([]int64, len(reverseForward)+1)
+	forwardPath[0] = startID
+	for i, node := range reverseForward {
+		forwardPath[len(reverseForward)-i] = node
+	}
 	backwardPath := []int64{}
 	current = meetingNode
 	for current != endID {
